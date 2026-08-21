@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { avisoSimuladoMarisol } from "@/lib/fixtures";
+import { generarMensajeSolicitud } from "@/lib/mensaje";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 import PantallaRechazo from "./PantallaRechazo";
 import PantallaConsentimiento from "./PantallaConsentimiento";
-import PantallaConfirmacion from "./PantallaConfirmacion";
+import PantallaConfirmacion, { type EstadoEnvio } from "./PantallaConfirmacion";
 
 type Paso = 1 | 2 | 3;
 
@@ -17,6 +19,38 @@ const TITULOS_PASO: Record<Paso, string> = {
 export default function TraductorWizard() {
   const [paso, setPaso] = useState<Paso>(1);
   const [datosObjetados, setDatosObjetados] = useState<string[]>([]);
+  const [estadoEnvio, setEstadoEnvio] = useState<EstadoEnvio>("enviando");
+  const [mensajeError, setMensajeError] = useState<string>();
+
+  async function enviarSolicitud() {
+    setPaso(3);
+    setEstadoEnvio("enviando");
+    setMensajeError(undefined);
+
+    try {
+      const mensajeGenerado = generarMensajeSolicitud(
+        avisoSimuladoMarisol,
+        datosObjetados
+      );
+
+      const { error } = await getSupabaseClient()
+        .from("solicitudes_revision")
+        .insert({
+          aviso_simulado: avisoSimuladoMarisol,
+          datos_objetados: datosObjetados,
+          mensaje_generado: mensajeGenerado,
+        });
+
+      if (error) throw error;
+
+      setEstadoEnvio("exito");
+    } catch {
+      setEstadoEnvio("error");
+      setMensajeError(
+        "No se pudo guardar tu solicitud. Revisa tu conexión e intenta de nuevo."
+      );
+    }
+  }
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col px-4 py-8">
@@ -36,13 +70,16 @@ export default function TraductorWizard() {
           seleccion={datosObjetados}
           onCambiarSeleccion={setDatosObjetados}
           onRegresar={() => setPaso(1)}
-          onEnviar={() => setPaso(3)}
+          onEnviar={enviarSolicitud}
         />
       )}
       {paso === 3 && (
         <PantallaConfirmacion
           aviso={avisoSimuladoMarisol}
           datosObjetados={datosObjetados}
+          estado={estadoEnvio}
+          mensajeError={mensajeError}
+          onReintentar={enviarSolicitud}
         />
       )}
     </div>
