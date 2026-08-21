@@ -16,6 +16,7 @@ const TITULOS_PASO: Record<Paso, string> = {
 
 export default function TraductorWizard() {
   const [paso, setPaso] = useState<Paso>(1);
+  const [datosObjetados, setDatosObjetados] = useState<string[]>([]);
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col px-4 py-8">
@@ -31,11 +32,19 @@ export default function TraductorWizard() {
       )}
       {paso === 2 && (
         <PantallaConsentimiento
+          aviso={avisoSimuladoMarisol}
+          seleccion={datosObjetados}
+          onCambiarSeleccion={setDatosObjetados}
           onRegresar={() => setPaso(1)}
           onEnviar={() => setPaso(3)}
         />
       )}
-      {paso === 3 && <PantallaConfirmacion />}
+      {paso === 3 && (
+        <PantallaConfirmacion
+          aviso={avisoSimuladoMarisol}
+          datosObjetados={datosObjetados}
+        />
+      )}
     </div>
   );
 }
