@@ -67,6 +67,11 @@ export default function PantallaConsentimiento({
         })}
       </ul>
 
+      <p className="text-sm text-zinc-500">
+        Puedes marcar uno, varios, o ninguno; de cualquier forma tu solicitud
+        de revisión humana se enviará.
+      </p>
+
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">Tu derecho, según la LFPDPPP</p>
         <p className="mt-1">

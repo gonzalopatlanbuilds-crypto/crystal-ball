@@ -67,10 +67,10 @@ export default function PantallaConfirmacion({
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">Importante</p>
         <p className="mt-1">
-          Este envío es una simulación para fines de esta demo — no se
-          conecta con un banco real. En un caso real, El Traductor solo
-          traduce y redacta tu solicitud: la decisión final siempre la toma
-          la entidad financiera, no esta plataforma.
+          En esta versión de práctica, no hay un banco real conectado
+          todavía — pero así es exactamente como funcionaría tu solicitud
+          real: la decisión final siempre la toma la entidad financiera,
+          nunca esta plataforma.
         </p>
       </div>
     </div>
