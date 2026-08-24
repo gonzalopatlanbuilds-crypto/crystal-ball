@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { avisoSimuladoMarisol } from "@/lib/fixtures";
 import { generarMensajeSolicitud } from "@/lib/mensaje";
-import { getSupabaseClient } from "@/lib/supabaseClient";
+import { guardarSolicitud } from "@/lib/enviarSolicitud";
 import PantallaRechazo from "./PantallaRechazo";
 import PantallaConsentimiento from "./PantallaConsentimiento";
 import PantallaConfirmacion, { type EstadoEnvio } from "./PantallaConfirmacion";
@@ -33,15 +33,11 @@ export default function TraductorWizard() {
         datosObjetados
       );
 
-      const { error } = await getSupabaseClient()
-        .from("solicitudes_revision")
-        .insert({
-          aviso_simulado: avisoSimuladoMarisol,
-          datos_objetados: datosObjetados,
-          mensaje_generado: mensajeGenerado,
-        });
-
-      if (error) throw error;
+      await guardarSolicitud({
+        aviso_simulado: avisoSimuladoMarisol,
+        datos_objetados: datosObjetados,
+        mensaje_generado: mensajeGenerado,
+      });
 
       setEstadoEnvio("exito");
     } catch {
