@@ -1,5 +1,5 @@
 import { validarClabe } from "@/lib/clabe";
-import { buscarEmpresa, buscarPromotor } from "@/lib/fixtures";
+import { buscarEmpresa, buscarPromotor, describirEstado } from "@/lib/fixtures";
 
 export interface DatosOferta {
   empresa: string;
@@ -89,7 +89,7 @@ function evaluarSenalEmpresa(empresa: string): { senal: Senal; estado: ReturnTyp
       etiqueta: "Empresa en lista de ejemplo",
       verificado: match?.estado === "registrada_sin_reportes",
       evidencia: match
-        ? `Coincide con "${match.nombre}" en la lista simulada de esta demo (estado: ${match.estado.replace("_", " ")}). ${match.notaFuente}`
+        ? `Coincide con "${match.nombre}" en la lista simulada de esta demo: ${describirEstado(match.estado)}. ${match.notaFuente}`
         : "No se encontró coincidencia en la lista simulada — esto NO significa que la empresa sea falsa, solo que no está en esta lista de ejemplo.",
       fuente: "mock",
     },
@@ -105,7 +105,7 @@ function evaluarSenalPromotor(promotor: string): { senal: Senal; estado: ReturnT
       etiqueta: "Promotor en lista de reportes",
       verificado: match?.estado !== "reportada_fraude",
       evidencia: match
-        ? `Coincide con "${match.nombre}" en la lista simulada de esta demo (estado: ${match.estado.replace("_", " ")}).`
+        ? `Coincide con "${match.nombre}" en la lista simulada de esta demo: ${describirEstado(match.estado)}.`
         : "No se encontró coincidencia en la lista simulada — no hay señal ni positiva ni negativa.",
       fuente: "mock",
     },

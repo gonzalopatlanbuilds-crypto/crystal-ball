@@ -19,6 +19,15 @@ export interface PromotorMock {
   notaFuente: string;
 }
 
+const DESCRIPCION_ESTADO: Record<EstadoRegistro, string> = {
+  registrada_sin_reportes: "registrada, sin reportes conocidos en esta lista de ejemplo",
+  reportada_fraude: "con reportes de fraude en esta lista de ejemplo",
+};
+
+export function describirEstado(estado: EstadoRegistro): string {
+  return DESCRIPCION_ESTADO[estado];
+}
+
 export const EMPRESAS_MOCK: EmpresaMock[] = [
   {
     nombre: "Inversiones Horizonte SA de CV",
