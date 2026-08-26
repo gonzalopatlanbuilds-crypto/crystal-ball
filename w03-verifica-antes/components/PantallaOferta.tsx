@@ -14,6 +14,8 @@ interface Errores {
   clabe?: string;
 }
 
+const LONGITUD_MINIMA_NOMBRE = 3;
+
 export default function PantallaOferta({ onContinuar, valoresIniciales }: Props) {
   const [empresa, setEmpresa] = useState(valoresIniciales?.empresa ?? "");
   const [promotor, setPromotor] = useState(valoresIniciales?.promotor ?? "");
@@ -22,11 +24,17 @@ export default function PantallaOferta({ onContinuar, valoresIniciales }: Props)
 
   function validar(): Errores {
     const nuevosErrores: Errores = {};
-    if (!empresa.trim()) {
+    const empresaLimpia = empresa.trim();
+    if (!empresaLimpia) {
       nuevosErrores.empresa = "Escribe el nombre de la empresa que te ofreció la inversión.";
+    } else if (empresaLimpia.length < LONGITUD_MINIMA_NOMBRE) {
+      nuevosErrores.empresa = `Escribe al menos ${LONGITUD_MINIMA_NOMBRE} caracteres — un nombre de una letra no se puede verificar.`;
     }
-    if (!promotor.trim()) {
+    const promotorLimpio = promotor.trim();
+    if (!promotorLimpio) {
       nuevosErrores.promotor = "Escribe el nombre de la persona que te contactó.";
+    } else if (promotorLimpio.length < LONGITUD_MINIMA_NOMBRE) {
+      nuevosErrores.promotor = `Escribe al menos ${LONGITUD_MINIMA_NOMBRE} caracteres — un nombre de una letra no se puede verificar.`;
     }
     const clabeLimpia = clabe.trim();
     if (!clabeLimpia) {
