@@ -1,7 +1,9 @@
+import VerificaWizard from "@/components/VerificaWizard";
+
 export default function Home() {
   return (
-    <main className="min-h-screen bg-zinc-50 flex items-center justify-center p-6">
-      <p className="text-zinc-500">Verifica Antes — en construcción.</p>
+    <main className="min-h-screen bg-zinc-50 px-4 py-10">
+      <VerificaWizard />
     </main>
   );
 }
