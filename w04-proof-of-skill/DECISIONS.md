@@ -18,20 +18,10 @@ caído. Aquí Supabase Auth + RLS no son un detalle técnico, son el mecanismo
 que la Feature 2 va a probar (que un segundo empleador no vea los datos del
 primero).
 
-**Sin resolver / requiere acción tuya (no puedo hacerlo desde aquí):**
-- Crear el proyecto de Supabase (nuevo, recomendado, para no heredar el
-  historial de fallos del proyecto "semestre").
-- Crear las credenciales OAuth de Google en Google Cloud Console y
-  configurarlas en Supabase Auth → Providers → Google.
-- Llenar `.env.local` con `NEXT_PUBLIC_SUPABASE_URL` y
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-- Probar el sign-in real con Google en el navegador (no puedo hacer OAuth
-  interactivo desde este entorno).
-- Ver instrucciones paso a paso en README.md.
-
-**Primer movimiento de la próxima sesión:** una vez que confirmes que el
-sign-in con Google funciona localmente y en Vercel, seguimos con Feature 2
-(pantalla de criterios ponderados + tabla `criteria_sets` con RLS).
+**Cerrado:** el usuario creó el proyecto de Supabase y el cliente OAuth de
+Google, y confirmó sign-in real end-to-end en local (selecciona cuenta →
+confirma correo → aterriza en `/dashboard` con su email). Feature 1
+verificada.
 
 ## 2026-09-06 — Alcance de Feature 4: el LLM solo redacta, nunca decide
 
@@ -54,3 +44,43 @@ una llamada de servidor a una API de LLM, o sea una nueva credencial
 (API key) que debe vivir solo en variables de entorno de Vercel — nunca en
 el cliente ni en el repo — y la llamada debe hacerse server-side (route
 handler o server action), no desde el navegador.
+
+## 2026-09-06 — Feature 2: criteria builder + RLS
+
+**Qué cambió:** tabla `criteria_sets` (`sql/schema.sql`) con RLS —
+policies separadas para select/insert/update/delete, todas comparando
+`auth.uid() = employer_id`, más un CHECK a nivel de base de datos
+(`criteria` debe ser un array jsonb de al menos 3 elementos) como respaldo,
+no como la validación principal. Pantallas `/criteria/new` y
+`/criteria/[id]` (mockup 1 del packet) construidas sobre un componente
+compartido `CriteriaBuilder` — permite agregar/editar/quitar criterios
+antes de guardar — y server actions (`createCriteriaSet`,
+`updateCriteriaSet`) que validan con zod (`lib/criteria.ts`) antes de
+tocar la base de datos: peso entero 0–100, etiqueta máximo 80 caracteres,
+mínimo 3 criterios. `/dashboard` ahora lista los roles guardados del
+empleador en sesión.
+
+**Por qué el peso es un input de texto y no solo un slider:** la Feature 2
+pide explícitamente que un peso no numérico dispare un error visible — un
+`<input type="number">` nativo bloquea letras en silencio (nunca dispara
+ese error), así que el campo de peso es texto libre validado a mano
+(cliente y servidor), con un slider al lado como atajo visual sincronizado
+al mismo estado.
+
+**Decisión de esquema:** los criterios viven como un array `jsonb` dentro
+de la fila `criteria_sets`, no en una tabla aparte — así lo describe la
+tabla de arquitectura del packet (solo `criteria_sets` y
+`candidate_scores`), y no hay necesidad de un criterio con vida propia
+fuera de su set en este slice.
+
+**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
+aquí):**
+- Correr `sql/schema.sql` completo en el SQL Editor de Supabase.
+- Crear un rol con 3+ criterios y confirmar que persiste al recargar.
+- Crear una segunda cuenta de Google de prueba y confirmar que no ve los
+  `criteria_sets` de la primera (ni en `/dashboard` ni entrando directo a
+  la URL de edición — debe dar 404).
+
+**Primer movimiento de la próxima sesión:** una vez confirmes RLS con las
+dos cuentas de prueba, seguimos con Feature 3 (datos simulados de
+candidatos + scoring ponderado contra un `criteria_sets`).

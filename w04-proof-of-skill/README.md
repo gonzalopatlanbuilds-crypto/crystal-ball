@@ -23,15 +23,28 @@ vez de auto-aprobado. Ver `docs/PACKET.md` para el spec completo.
 - **Todos los datos de candidatos son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 1 (auth + shell vacío)
+## Estado actual: Feature 2 (criteria builder)
 
-Implementado: scaffold de Next.js, Supabase Auth con Google vía
-`@supabase/ssr`, `proxy.ts` protegiendo todas las rutas salvo `/login` y
-`/auth/callback`, y un dashboard vacío en `/dashboard`.
+Implementado: Feature 1 (auth con Google, shell protegido) más la pantalla
+de criterios ponderados (mockup 1 del packet): `/criteria/new` para crear un
+rol, `/criteria/[id]` para editarlo, y `/dashboard` listando los roles ya
+guardados del empleador en sesión. La tabla `criteria_sets` (`sql/schema.sql`)
+tiene RLS desde su primera migración: cada empleador solo puede
+leer/escribir sus propias filas (`employer_id = auth.uid()`).
 
-Sin tablas propias todavía — `sql/schema.sql` se va a llenar en la Feature 2
-(`criteria_sets`) y Feature 3 (`candidate_scores`), cada una con RLS desde
-su primera migración.
+Validación: cada peso se valida server-side con zod (`lib/criteria.ts`) —
+entero, 0–100, rechaza cualquier valor no numérico con un error visible
+junto al campo — y cada etiqueta tiene un máximo de 80 caracteres. El
+formulario también valida en vivo en el navegador antes de enviar, pero la
+validación que cuenta (la que decide si algo llega a la base de datos) es
+la del server action.
+
+Sin `candidate_scores` todavía — llega en la Feature 3.
+
+**Pendiente de que corras tú (no puedo ejecutar SQL en tu proyecto desde
+aquí):** el `sql/schema.sql` actualizado crea `criteria_sets`. Ve a tu
+proyecto de Supabase → **SQL Editor → New query**, pega el contenido
+completo de `sql/schema.sql` y ejecútalo. Sin esto, guardar un rol falla.
 
 ## Desarrollo local
 
@@ -102,11 +115,16 @@ Abre [http://localhost:3000](http://localhost:3000) — te debe redirigir a
 
 ## Verificación manual pendiente (no puedo hacerla desde aquí)
 
-- Confirmar que el sign-in con Google funciona en local y en producción.
-- Confirmar en el Table Editor de Supabase que RLS está ON en cada tabla
-  antes de agregar datos reales de prueba (desde la Feature 2).
-- Crear una segunda cuenta de Google de prueba para verificar en la
-  Feature 2 que un empleador no puede ver los `criteria_sets` de otro.
+- Confirmar que el sign-in con Google funciona en local y en producción
+  (✅ ya confirmado en local para Feature 1).
+- Correr `sql/schema.sql` en el SQL Editor de Supabase y confirmar en el
+  Table Editor que `criteria_sets` quedó con RLS **ON**.
+- Crear un rol con 3+ criterios, guardar, recargar la página y confirmar
+  que los datos siguen ahí.
+- Crear una segunda cuenta de Google de prueba, iniciar sesión con ella, y
+  confirmar que **no** aparece el rol creado con la primera cuenta ni en
+  `/dashboard` ni entrando directo a `/criteria/<id-del-primer-rol>` (debe
+  dar 404, no error 500 ni mostrar datos ajenos).
 
 ## Alcance — qué NO se construye en este slice
 
