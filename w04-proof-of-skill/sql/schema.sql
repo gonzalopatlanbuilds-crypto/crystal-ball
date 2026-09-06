@@ -1,0 +1,6 @@
+-- Proof of Skill — schema Feature 1 (auth + shell)
+-- No hay tablas propias todavía: Feature 1 solo depende de auth.users,
+-- que administra Supabase Auth. Este archivo existe desde el commit 1
+-- para que el historial de sql/schema.sql documente el esquema completo
+-- a medida que se agregan features (criteria_sets en Feature 2,
+-- candidate_scores en Feature 3).
