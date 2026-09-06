@@ -4,9 +4,11 @@
 
 **Qué cambió:** scaffold de Next.js 16 + Tailwind v4 + TS (mismo patrón que
 w02/w03), y el flujo completo de Supabase Auth con Google usando
-`@supabase/ssr`: `middleware.ts` protege todas las rutas salvo `/login` y
-`/auth/callback`, redirigiendo a `/login` si no hay sesión y a `/dashboard`
-si ya la hay. `app/dashboard/page.tsx` es el shell vacío autenticado.
+`@supabase/ssr`: `proxy.ts` (convención actual de Next 16 — `middleware.ts`
+está deprecado) protege todas las rutas salvo `/login` y `/auth/callback`,
+redirigiendo a `/login` si no hay sesión y a `/dashboard` si ya la hay.
+`app/dashboard/page.tsx` es el shell vacío autenticado. Commit `f593713`,
+pusheado a `origin/main`.
 
 **Por qué:** el packet (Condición 1: confianza del empleador desde el día
 uno) exige que Row Level Security separe de verdad los datos de cada
@@ -30,3 +32,25 @@ primero).
 **Primer movimiento de la próxima sesión:** una vez que confirmes que el
 sign-in con Google funciona localmente y en Vercel, seguimos con Feature 2
 (pantalla de criterios ponderados + tabla `criteria_sets` con RLS).
+
+## 2026-09-06 — Alcance de Feature 4: el LLM solo redacta, nunca decide
+
+**Qué cambió (decisión de alcance, sin código todavía):** se reincorpora la
+fila "AI layer" del packet, pero acotada: una llamada a un LLM en Feature 4
+que **únicamente redacta el texto explicando por qué un criterio quedó
+borderline**. El score ponderado y el umbral que decide si algo se marca
+"Flagged for human review" siguen siendo 100% lógica de reglas pura (sin
+IO, determinística, testeable a mano) — el LLM nunca calcula el score ni
+decide el flag, solo genera la frase que se le muestra al empleador junto
+al resultado, etiquetada en pantalla como "AI-generated, simulated".
+
+**Por qué:** así lo pidió el usuario explícitamente, para no romper el
+piso de seguridad ("no AI grading engine") ni el Condition 2 del Blueprint
+(ningún resultado borderline se auto-certifica) — la IA describe, no
+decide.
+
+**Implicación de seguridad a resolver cuando se construya:** esto agrega
+una llamada de servidor a una API de LLM, o sea una nueva credencial
+(API key) que debe vivir solo en variables de entorno de Vercel — nunca en
+el cliente ni en el repo — y la llamada debe hacerse server-side (route
+handler o server action), no desde el navegador.
