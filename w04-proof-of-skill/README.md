@@ -23,28 +23,38 @@ vez de auto-aprobado. Ver `docs/PACKET.md` para el spec completo.
 - **Todos los datos de candidatos son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 2 (criteria builder)
+## Estado actual: Feature 3 (scoring ponderado + flag de revisión humana)
 
-Implementado: Feature 1 (auth con Google, shell protegido) más la pantalla
-de criterios ponderados (mockup 1 del packet): `/criteria/new` para crear un
-rol, `/criteria/[id]` para editarlo, y `/dashboard` listando los roles ya
-guardados del empleador en sesión. La tabla `criteria_sets` (`sql/schema.sql`)
-tiene RLS desde su primera migración: cada empleador solo puede
-leer/escribir sus propias filas (`employer_id = auth.uid()`).
+Implementado: Feature 1 (auth con Google, shell protegido), Feature 2
+(criteria builder — `/criteria/new`, `/criteria/[id]`, `/dashboard`
+listando los roles del empleador en sesión) y Feature 3 (mockup 2 del
+packet): desde `/criteria/[id]` se califica un candidato simulado con un
+score 0–100 por criterio (`/criteria/[id]/candidates/new`) y se ve el
+scorecard resultante (`/criteria/[id]/candidates/[candidateId]`) — score
+ponderado total, desglose por criterio y flag automático a revisión
+humana. Las tablas `criteria_sets` y `candidate_scores`
+(`sql/schema.sql`) tienen RLS desde su primera migración: cada empleador
+solo puede leer/escribir sus propias filas (`employer_id = auth.uid()`).
 
-Validación: cada peso se valida server-side con zod (`lib/criteria.ts`) —
+Validación: cada peso (Feature 2) y cada score de candidato (Feature 3)
+se valida server-side con zod (`lib/criteria.ts`, `lib/scoring.ts`) —
 entero, 0–100, rechaza cualquier valor no numérico con un error visible
-junto al campo — y cada etiqueta tiene un máximo de 80 caracteres. El
-formulario también valida en vivo en el navegador antes de enviar, pero la
-validación que cuenta (la que decide si algo llega a la base de datos) es
-la del server action.
+junto al campo. El formulario también valida en vivo en el navegador
+antes de enviar, pero la validación que cuenta (la que decide si algo
+llega a la base de datos) es la del server action.
 
-Sin `candidate_scores` todavía — llega en la Feature 3.
+El score y el flag de revisión humana son 100% lógica de reglas —
+`calcularScore()` en `lib/scoring.ts`, sin IO, determinística — no hay
+ninguna llamada a IA todavía. Eso llega acotado en la Feature 4 (ver
+`DECISIONS.md`): un LLM que solo redacta la explicación del borderline,
+nunca decide el número ni el flag.
 
 **Pendiente de que corras tú (no puedo ejecutar SQL en tu proyecto desde
-aquí):** el `sql/schema.sql` actualizado crea `criteria_sets`. Ve a tu
-proyecto de Supabase → **SQL Editor → New query**, pega el contenido
-completo de `sql/schema.sql` y ejecútalo. Sin esto, guardar un rol falla.
+aquí):** el `sql/schema.sql` actualizado agrega `candidate_scores`. Ve a
+tu proyecto de Supabase → **SQL Editor → New query**, pega el contenido
+completo de `sql/schema.sql` (es idempotente — puedes volver a correr
+todo el archivo aunque `criteria_sets` ya exista) y ejecútalo. Sin esto,
+calificar un candidato falla.
 
 ## Desarrollo local
 
@@ -118,13 +128,20 @@ Abre [http://localhost:3000](http://localhost:3000) — te debe redirigir a
 - Confirmar que el sign-in con Google funciona en local y en producción
   (✅ ya confirmado en local para Feature 1).
 - Correr `sql/schema.sql` en el SQL Editor de Supabase y confirmar en el
-  Table Editor que `criteria_sets` quedó con RLS **ON**.
+  Table Editor que `criteria_sets` y `candidate_scores` quedaron con RLS
+  **ON** (✅ ya confirmado para `criteria_sets`).
 - Crear un rol con 3+ criterios, guardar, recargar la página y confirmar
-  que los datos siguen ahí.
-- Crear una segunda cuenta de Google de prueba, iniciar sesión con ella, y
-  confirmar que **no** aparece el rol creado con la primera cuenta ni en
-  `/dashboard` ni entrando directo a `/criteria/<id-del-primer-rol>` (debe
-  dar 404, no error 500 ni mostrar datos ajenos).
+  que los datos siguen ahí (✅ ya confirmado).
+- Crear una segunda cuenta de Google de prueba y confirmar que **no** ve
+  los `criteria_sets` de la primera, ni en `/dashboard` ni entrando
+  directo a `/criteria/<id-del-primer-rol>` (debe dar 404) (✅ ya
+  confirmado).
+- Calificar un candidato simulado contra un rol y confirmar que el
+  scorecard sale flagged cuando: (a) un criterio con peso ≥25% saca
+  score <50, o (b) el total cae entre 45–65 — y que sale sin flag cuando
+  todos los scores son altos.
+- Confirmar que la segunda cuenta de prueba tampoco ve los
+  `candidate_scores` de la primera.
 
 ## Alcance — qué NO se construye en este slice
 
