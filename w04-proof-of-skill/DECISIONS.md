@@ -223,3 +223,46 @@ queda pendiente de que el usuario la pruebe — ver README.
   "Generar explicación (IA)" y confirmar que el texto: (a) no inventa
   ningún criterio ni número que no esté en el desglose, (b) no dice que
   el candidato "debe avanzar" ni usa lenguaje de veredicto.
+
+## 2026-09-06 — Fix: el criteria builder no forzaba que los pesos sumaran 100%
+
+**Qué cambió:** el usuario reportó que se podía guardar un rol con pesos
+que no suman 100% (ej. 30/30/30 = 90%). `calcularScore()` normaliza por
+`pesoTotal`, así que el número seguía siendo matemáticamente correcto,
+pero el rótulo "peso 30%" que se muestra por criterio deja de significar
+"% del total" si los pesos no suman 100 — el score deja de ser
+interpretable para el empleador aunque el cálculo no esté roto.
+
+`criteriaSetInputSchema` (`lib/criteria.ts`) ahora tiene un
+`.superRefine()` que sí es la validación que cuenta: si la suma de pesos
+≠ 100% (y ya hay al menos `MINIMO_CRITERIOS`, para no chocar con ese
+error primero), rechaza con un mensaje que dice la suma actual y cuánto
+falta o sobra. `CriteriaBuilder.tsx` calcula la misma suma en vivo sobre
+`filas` y muestra una caja de estado (verde si suma 100%, ámbar si no)
+justo antes del botón de guardar, y **deshabilita el submit** mientras no
+sume exactamente 100% — sin bloquear que el usuario siga escribiendo
+pesos parciales mientras arma el rol.
+
+**Alcance de la validación (client + server, no DB):** el usuario pidió
+específicamente validación client-side y server-side; no se agregó un
+CHECK de base de datos para esto porque Postgres no permite subqueries en
+CHECK constraints — habría necesitado una función PL/pgSQL solo para
+sumar un array jsonb, y el server action (zod) ya es la validación que
+decide qué llega a la base. Si se quiere un respaldo a nivel de DB más
+adelante, sería esa función.
+
+**No migra datos existentes:** roles guardados antes de este fix con
+pesos que no suman 100% quedan como están — este fix es hacia adelante
+(bloquea nuevos guardados con la suma incorrecta), no reescribe historial.
+
+**Verificado:** `npx eslint`, `npx tsc --noEmit` y `npm run build` pasan
+limpios. La lógica de `.superRefine()` se probó a mano fuera del proyecto
+con 4 casos (suma=100 → OK; suma=90 → "te faltan 10%"; suma=120 →
+"sobran 20%"; solo 2 criterios → el error de mínimo sale primero, sin
+mensaje de suma redundante).
+
+**Pendiente de que hagas tú:** confirmar en el navegador que la caja de
+"Suma de pesos" se actualiza en vivo al escribir, que el botón de guardar
+se deshabilita mientras no sume 100%, y que un rol viejo (si tienes uno
+con suma ≠ 100%) sigue abriendo para editar sin tronar — solo debe
+bloquear el *guardado*, no la lectura.

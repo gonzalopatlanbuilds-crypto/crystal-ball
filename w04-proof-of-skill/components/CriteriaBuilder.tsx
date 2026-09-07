@@ -2,7 +2,12 @@
 
 import { useActionState, useState } from "react";
 import type { CriteriaFormState } from "@/app/(empleador)/criteria/actions";
-import { ETIQUETA_MAX_LARGO, MINIMO_CRITERIOS, ROL_MAX_LARGO } from "@/lib/criteria";
+import {
+  ETIQUETA_MAX_LARGO,
+  MINIMO_CRITERIOS,
+  ROL_MAX_LARGO,
+  SUMA_PESOS_REQUERIDA,
+} from "@/lib/criteria";
 
 interface FilaCriterio {
   id: string;
@@ -55,6 +60,9 @@ export default function CriteriaBuilder({ action, valoresIniciales, textoBoton }
   const payloadCriterios = JSON.stringify(
     filas.map((f) => ({ label: f.label, weight: Number(f.weight) }))
   );
+
+  const sumaPesos = filas.reduce((acc, f) => acc + (Number(f.weight) || 0), 0);
+  const sumaValida = sumaPesos === SUMA_PESOS_REQUERIDA;
 
   return (
     <form action={formAction} className="mx-auto max-w-2xl p-6">
@@ -131,6 +139,19 @@ export default function CriteriaBuilder({ action, valoresIniciales, textoBoton }
         </p>
       )}
 
+      <div
+        className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+          sumaValida ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
+        }`}
+      >
+        Suma de pesos: {sumaPesos}%{" "}
+        {sumaValida
+          ? "— correcto, el score ponderado es interpretable."
+          : sumaPesos < SUMA_PESOS_REQUERIDA
+            ? `— te faltan ${SUMA_PESOS_REQUERIDA - sumaPesos}% para llegar a ${SUMA_PESOS_REQUERIDA}%.`
+            : `— sobran ${sumaPesos - SUMA_PESOS_REQUERIDA}%. Quita peso a algún criterio.`}
+      </div>
+
       <button
         type="button"
         onClick={agregarFila}
@@ -142,7 +163,7 @@ export default function CriteriaBuilder({ action, valoresIniciales, textoBoton }
       <div className="mt-6">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || filas.length < MINIMO_CRITERIOS || !sumaValida}
           className="rounded-lg bg-blue-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
         >
           {pending ? "Guardando…" : textoBoton}
