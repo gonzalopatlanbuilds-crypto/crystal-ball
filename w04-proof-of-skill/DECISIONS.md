@@ -266,3 +266,50 @@ mensaje de suma redundante).
 se deshabilita mientras no sume 100%, y que un rol viejo (si tienes uno
 con suma ≠ 100%) sigue abriendo para editar sin tronar — solo debe
 bloquear el *guardado*, no la lectura.
+
+## 2026-09-06 — Fix (persona test): nombres de candidato indistinguibles del rol
+
+**Qué encontró el persona test:** el packet pide correr un persona test
+con una gerente de RH escéptica y "loguear todo punto de confusión;
+arreglar el peor antes del deadline". El peor punto: nombres de
+candidatos simulados como "Backend Developer Jr.2/3/4" — casi idénticos
+al nombre del rol ("Backend Developer (Jr.)") — generaban ambigüedad
+real sobre si se estaba viendo una persona evaluada o una versión del
+puesto.
+
+**Causa raíz:** `CandidateScoreForm.tsx` no daba ningún ejemplo de qué
+forma debía tener un nombre de candidato — el placeholder decía "Ej.
+Candidato simulado #1", que no sugiere un nombre de persona. Sin un
+ejemplo concreto, era natural terminar escribiendo algo parecido al
+nombre del rol que se estaba calificando.
+
+**Qué cambió:** el placeholder ahora es "Ej. Mariana R." (mismo estilo
+que el mockup del packet), el label pasó de "Nombre o alias del
+candidato" a "Nombre o alias de la persona candidata", y se agregó una
+nota explícita debajo del campo: "Usa un nombre de persona (ficticio), no
+el nombre del rol — en el scorecard, el rol y la persona candidata se
+muestran juntos y deben distinguirse a simple vista." La etiqueta
+"Datos simulados" ya existía y se mantiene.
+
+**Qué no cambié:** no agregué una validación que rechace un
+`candidate_name` parecido al `role_name` — el campo sigue siendo texto
+libre (es un alias, puede ser cualquier cosa legítimamente), así que el
+arreglo es guiar con el ejemplo correcto, no bloquear con una regla
+frágil (¿qué tan "parecido" es demasiado parecido? — ese tipo de heurística
+genera más falsos positivos que valor).
+
+**Limpieza de los candidatos ya guardados:** no se reescriben solos —
+`candidate_scores` no tiene policy de `update` (un scorecard ya emitido
+no se edita, se vuelve a calificar, ver la entrada de Feature 3). El
+usuario pidió no tocar Supabase directamente, así que se agregó la mitad
+de "borrar" de ese flujo: `deleteCandidateScore` (server action en
+`candidates/actions.ts`) + botón "Eliminar" con confirmación
+(`window.confirm`) en `components/DeleteCandidateButton.tsx`, visible
+junto a cada candidato en `/criteria/[id]`. Usa la policy de delete que
+ya existía en `sql/schema.sql` desde la Feature 3 pero nunca estaba
+conectada a ninguna UI — no fue necesario tocar el schema.
+
+**Pendiente de que hagas tú:** borrar los 3 candidatos con nombres
+confusos con el nuevo botón, y volver a calificarlos con el formulario ya
+corregido usando nombres de persona (ej. "Mariana R.", "Diego T.", "Ana
+G.", como en el mockup).

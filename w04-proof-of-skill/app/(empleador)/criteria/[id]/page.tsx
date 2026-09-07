@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import CriteriaBuilder from "@/components/CriteriaBuilder";
+import DeleteCandidateButton from "@/components/DeleteCandidateButton";
 import { updateCriteriaSet } from "../actions";
 
 interface CriteriaSetRow {
@@ -72,13 +73,21 @@ export default async function EditarRolPage({
         {candidateScores && candidateScores.length > 0 && (
           <ul className="mt-3 space-y-2">
             {candidateScores.map((c) => (
-              <li key={c.id}>
+              <li
+                key={c.id}
+                className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2.5"
+              >
                 <Link
                   href={`/criteria/${id}/candidates/${c.id}`}
-                  className="block rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm hover:border-blue-300 hover:bg-blue-50/40"
+                  className="flex-1 text-sm hover:text-blue-800"
                 >
                   {c.candidate_name}
                 </Link>
+                <DeleteCandidateButton
+                  candidateScoreId={c.id}
+                  criteriaSetId={id}
+                  candidateName={c.candidate_name}
+                />
               </li>
             ))}
           </ul>

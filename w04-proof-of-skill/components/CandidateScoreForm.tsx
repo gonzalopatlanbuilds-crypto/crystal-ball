@@ -32,9 +32,9 @@ export default function CandidateScoreForm({ action, roleName, criterios }: Prop
     <form action={formAction} className="mx-auto max-w-2xl p-6">
       <input type="hidden" name="scores" value={payloadScores} />
 
-      <p className="text-sm text-zinc-500">Calificando contra: {roleName}</p>
+      <p className="text-sm text-zinc-500">Calificando contra el rol: {roleName}</p>
       <label className="mt-1 block text-sm font-medium text-zinc-700" htmlFor="candidate_name">
-        Nombre o alias del candidato
+        Nombre o alias de la persona candidata
       </label>
       <input
         id="candidate_name"
@@ -42,9 +42,13 @@ export default function CandidateScoreForm({ action, roleName, criterios }: Prop
         value={candidateName}
         onChange={(e) => setCandidateName(e.target.value)}
         maxLength={NOMBRE_CANDIDATO_MAX_LARGO}
-        placeholder="Ej. Candidato simulado #1"
+        placeholder="Ej. Mariana R."
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-lg font-semibold text-zinc-900"
       />
+      <p className="mt-1 text-xs text-zinc-400">
+        Usa un nombre de persona (ficticio), no el nombre del rol — en el scorecard, el rol y la
+        persona candidata se muestran juntos y deben distinguirse a simple vista.
+      </p>
       <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
         Datos simulados — este flujo no evalúa habilidades reales de nadie. Ingresa un score
         0–100 por criterio como si viniera de una evaluación de habilidades ya hecha.

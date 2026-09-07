@@ -2,6 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseCandidateScoreForm, calcularScore, type CriterioCalificado } from "@/lib/scoring";
 import { redactarExplicacionBorderline } from "@/lib/llm";
@@ -128,4 +129,32 @@ export async function generateBorderlineExplanation(
     console.error("generateBorderlineExplanation unexpected error:", err);
     return { success: false, error: "No se pudo generar la explicación. Intenta de nuevo." };
   }
+}
+
+export type DeleteCandidateScoreResult = { error: string } | undefined;
+
+// Borra un scorecard (ej. datos de prueba con un nombre confuso). No hay
+// server action para "editar" un candidate_score — es intencional (ver
+// Feature 3 en DECISIONS.md: un scorecard ya emitido no se edita, se
+// vuelve a calificar) — así que borrar y volver a calificar es el único
+// camino, y esta es la mitad de "borrar" de ese flujo.
+export async function deleteCandidateScore(
+  candidateScoreId: string,
+  criteriaSetId: string
+): Promise<DeleteCandidateScoreResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Tu sesión expiró. Vuelve a iniciar sesión." };
+
+  const { error } = await supabase
+    .from("candidate_scores")
+    .delete()
+    .eq("id", candidateScoreId)
+    .eq("employer_id", user.id);
+
+  if (error) return { error: "No se pudo eliminar el candidato. Intenta de nuevo." };
+
+  revalidatePath(`/criteria/${criteriaSetId}`);
 }
