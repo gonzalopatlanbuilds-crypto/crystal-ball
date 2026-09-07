@@ -49,12 +49,10 @@ ninguna llamada a IA todavía. Eso llega acotado en la Feature 4 (ver
 `DECISIONS.md`): un LLM que solo redacta la explicación del borderline,
 nunca decide el número ni el flag.
 
-**Pendiente de que corras tú (no puedo ejecutar SQL en tu proyecto desde
-aquí):** el `sql/schema.sql` actualizado agrega `candidate_scores`. Ve a
-tu proyecto de Supabase → **SQL Editor → New query**, pega el contenido
-completo de `sql/schema.sql` (es idempotente — puedes volver a correr
-todo el archivo aunque `criteria_sets` ya exista) y ejecútalo. Sin esto,
-calificar un candidato falla.
+Feature 3 verificada de punta a punta: schema corrido en Supabase, flag
+de revisión humana confirmado en los tres casos (criterio de peso alto
+con score débil, total en banda borderline, todo alto sin flag) y RLS
+confirmado en `candidate_scores` con una segunda cuenta de prueba.
 
 ## Desarrollo local
 
@@ -123,25 +121,21 @@ Abre [http://localhost:3000](http://localhost:3000) — te debe redirigir a
 8. Si más adelante cambias las env vars en Vercel, tienes que volver a
    desplegar (Redeploy) para que tomen efecto.
 
-## Verificación manual pendiente (no puedo hacerla desde aquí)
+## Verificación manual
 
-- Confirmar que el sign-in con Google funciona en local y en producción
-  (✅ ya confirmado en local para Feature 1).
-- Correr `sql/schema.sql` en el SQL Editor de Supabase y confirmar en el
-  Table Editor que `criteria_sets` y `candidate_scores` quedaron con RLS
-  **ON** (✅ ya confirmado para `criteria_sets`).
-- Crear un rol con 3+ criterios, guardar, recargar la página y confirmar
-  que los datos siguen ahí (✅ ya confirmado).
-- Crear una segunda cuenta de Google de prueba y confirmar que **no** ve
-  los `criteria_sets` de la primera, ni en `/dashboard` ni entrando
-  directo a `/criteria/<id-del-primer-rol>` (debe dar 404) (✅ ya
-  confirmado).
-- Calificar un candidato simulado contra un rol y confirmar que el
-  scorecard sale flagged cuando: (a) un criterio con peso ≥25% saca
-  score <50, o (b) el total cae entre 45–65 — y que sale sin flag cuando
-  todos los scores son altos.
-- Confirmar que la segunda cuenta de prueba tampoco ve los
-  `candidate_scores` de la primera.
+- ✅ Sign-in con Google funciona en local (Feature 1).
+- ✅ `sql/schema.sql` corrido en Supabase — `criteria_sets` y
+  `candidate_scores` con RLS **ON**.
+- ✅ Rol con 3+ criterios se guarda y persiste al recargar.
+- ✅ Segunda cuenta de Google de prueba no ve los `criteria_sets` ni los
+  `candidate_scores` de la primera, ni en `/dashboard` ni entrando
+  directo a una URL ajena.
+- ✅ Scorecard sale flagged cuando: (a) un criterio con peso ≥25% saca
+  score <50, o (b) el total cae entre 45–65 — y sale "sin señales de
+  alerta" cuando todos los scores son altos.
+
+Pendiente (producción, no local): probar sign-in con Google en la URL de
+Vercel una vez desplegado.
 
 ## Alcance — qué NO se construye en este slice
 

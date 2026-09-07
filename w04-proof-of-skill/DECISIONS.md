@@ -138,26 +138,19 @@ booleano del flag.
 limpios con las rutas nuevas (`/criteria/[id]/candidates/new` y
 `/criteria/[id]/candidates/[candidateId]`) registradas.
 
-**Pendiente de que hagas tú (no puedo correr SQL ni usar el navegador
-desde aquí):**
-- Correr el `sql/schema.sql` actualizado en el SQL Editor de Supabase
-  (agrega `candidate_scores` — sin esto, calificar un candidato falla).
-- Calificar un candidato simulado con un criterio de peso alto (≥25%) en
-  score bajo (<50) y confirmar que sale flagged aunque el total sea
-  decente.
-- Calificar uno con el total cayendo entre 45–65 y confirmar que también
-  sale flagged.
-- Calificar uno con todo alto y confirmar que sale "sin señales de
-  alerta" — y que el texto nunca dice "aprobado" ni "garantizado".
-- Confirmar que la segunda cuenta de prueba tampoco ve los
-  `candidate_scores` de la primera (mismo check de RLS que ya hiciste
-  para `criteria_sets`).
+**Cerrado:** el usuario corrió `sql/schema.sql` (con el fix de
+idempotencia de la entrada siguiente) en Supabase y confirmó a mano los
+tres casos de la regla de flag: criterio de peso alto (≥25%) con score
+bajo (<50) → flagged con el motivo explicado en pantalla; todo alto →
+"sin señales de alerta" con la nota de "reglas determinísticas, sin caja
+negra"; y que la segunda cuenta de prueba no ve los `candidate_scores` de
+la primera. Feature 3 verificada de punta a punta.
 
-**Primer movimiento de la próxima sesión:** una vez confirmes lo de
-arriba, seguimos con la Feature 4 (la llamada a LLM que solo redacta la
-explicación del borderline, acotada como quedó decidido más arriba en
-este documento) — o, si prefieres, saltamos a correr el persona test del
-packet con las Features 1–3 ya completas.
+**Primer movimiento de la próxima sesión:** seguimos con la Feature 4 (la
+llamada a LLM que solo redacta la explicación del borderline, acotada
+como quedó decidido más arriba en este documento) — o, si se prefiere,
+saltamos a correr el persona test del packet con las Features 1–3 ya
+completas.
 
 ## 2026-09-06 — Fix: sql/schema.sql no era realmente idempotente
 
