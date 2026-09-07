@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calcularScore, type CriterioCalificado } from "@/lib/scoring";
+import BorderlineExplanation from "@/components/BorderlineExplanation";
 
 interface CandidateScoreRow {
   id: string;
@@ -64,6 +65,7 @@ export default async function ScorecardPage({
             Este resultado no se auto-aprueba. Un revisor humano debe confirmarlo o descartarlo
             antes de avanzar al candidato.
           </p>
+          <BorderlineExplanation candidateScoreId={row.id} />
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4">

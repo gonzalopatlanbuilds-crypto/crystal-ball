@@ -9,8 +9,15 @@ vez de auto-aprobado. Ver `docs/PACKET.md` para el spec completo.
 ## Seguridad — piso no negociable
 
 - **Sin llaves en el código ni en el repo.** Las credenciales de Supabase
-  viven en `.env.local` (ignorado por git) en desarrollo, y en las
-  Environment Variables del dashboard de Vercel en producción.
+  y la `ANTHROPIC_API_KEY` viven en `.env.local` (ignorado por git) en
+  desarrollo, y en las Environment Variables del dashboard de Vercel en
+  producción.
+- **El LLM solo redacta, nunca decide.** La llamada a Claude (Feature 4)
+  únicamente genera la frase que explica un resultado borderline; el
+  score y el flag de revisión humana son 100% lógica de reglas
+  determinística (`lib/scoring.ts`), calculada antes de que el LLM entre
+  en juego. La llamada es server-side (server action) — la
+  `ANTHROPIC_API_KEY` nunca llega al navegador.
 - **Supabase Auth con Google.** Ninguna pantalla ni dato vive detrás de una
   puerta abierta — `proxy.ts` redirige a `/login` a cualquier visita sin
   sesión.
@@ -23,18 +30,27 @@ vez de auto-aprobado. Ver `docs/PACKET.md` para el spec completo.
 - **Todos los datos de candidatos son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 3 (scoring ponderado + flag de revisión humana)
+## Estado actual: Feature 4 (explicación del borderline redactada por LLM)
 
 Implementado: Feature 1 (auth con Google, shell protegido), Feature 2
 (criteria builder — `/criteria/new`, `/criteria/[id]`, `/dashboard`
-listando los roles del empleador en sesión) y Feature 3 (mockup 2 del
-packet): desde `/criteria/[id]` se califica un candidato simulado con un
-score 0–100 por criterio (`/criteria/[id]/candidates/new`) y se ve el
-scorecard resultante (`/criteria/[id]/candidates/[candidateId]`) — score
-ponderado total, desglose por criterio y flag automático a revisión
-humana. Las tablas `criteria_sets` y `candidate_scores`
-(`sql/schema.sql`) tienen RLS desde su primera migración: cada empleador
-solo puede leer/escribir sus propias filas (`employer_id = auth.uid()`).
+listando los roles del empleador en sesión), Feature 3 (mockup 2 del
+packet: calificar un candidato simulado en
+`/criteria/[id]/candidates/new` y ver su scorecard en
+`/criteria/[id]/candidates/[candidateId]` — score ponderado, desglose por
+criterio, flag automático a revisión humana) y Feature 4: cuando un
+scorecard sale flagged, un botón "Generar explicación (IA)" llama
+server-side a Claude Haiku 4.5 (`lib/llm.ts`) para redactar, en 2–4
+oraciones, por qué ese resultado quedó borderline — **usando únicamente
+los motivos que la lógica de reglas ya calculó**, nunca decidiendo el
+score ni el flag ni emitiendo un veredicto. El texto sale etiquetado en
+pantalla como "Explicación generada por IA — simulada, no es un
+veredicto". La llamada es bajo demanda (no se dispara sola al calificar)
+para no gastar en scorecards que nadie revisa.
+
+Las tablas `criteria_sets` y `candidate_scores` (`sql/schema.sql`) tienen
+RLS desde su primera migración: cada empleador solo puede leer/escribir
+sus propias filas (`employer_id = auth.uid()`).
 
 Validación: cada peso (Feature 2) y cada score de candidato (Feature 3)
 se valida server-side con zod (`lib/criteria.ts`, `lib/scoring.ts`) —
@@ -43,16 +59,23 @@ junto al campo. El formulario también valida en vivo en el navegador
 antes de enviar, pero la validación que cuenta (la que decide si algo
 llega a la base de datos) es la del server action.
 
-El score y el flag de revisión humana son 100% lógica de reglas —
-`calcularScore()` en `lib/scoring.ts`, sin IO, determinística — no hay
-ninguna llamada a IA todavía. Eso llega acotado en la Feature 4 (ver
-`DECISIONS.md`): un LLM que solo redacta la explicación del borderline,
-nunca decide el número ni el flag.
+El score y el flag de revisión humana siguen siendo 100% lógica de
+reglas — `calcularScore()` en `lib/scoring.ts`, sin IO, determinística.
+El LLM de la Feature 4 nunca la toca; solo redacta una frase a partir de
+un resultado que las reglas ya decidieron.
 
-Feature 3 verificada de punta a punta: schema corrido en Supabase, flag
-de revisión humana confirmado en los tres casos (criterio de peso alto
-con score débil, total en banda borderline, todo alto sin flag) y RLS
-confirmado en `candidate_scores` con una segunda cuenta de prueba.
+Features 1–3 verificadas de punta a punta: schema corrido en Supabase,
+flag de revisión humana confirmado en los tres casos (criterio de peso
+alto con score débil, total en banda borderline, todo alto sin flag) y
+RLS confirmado en `criteria_sets` y `candidate_scores` con una segunda
+cuenta de prueba. Producción en Vercel corriendo con las env vars
+correctas, login con Google confirmado igual que en local.
+
+**Pendiente de que hagas tú:** conseguir una `ANTHROPIC_API_KEY` en
+[console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+(nunca la pegues en el chat) y ponerla en `.env.local` — ver
+`.env.local.example`. Luego calificar un candidato que salga flagged y
+probar el botón "Generar explicación (IA)" en su scorecard.
 
 ## Desarrollo local
 
@@ -93,6 +116,12 @@ valores del paso 1. Estas son las llaves "anon/public" — están diseñadas
 para exponerse en el navegador; la seguridad real la da RLS, no el secreto
 de esta llave. Nunca las pegues en el chat ni en el código.
 
+Llena también `ANTHROPIC_API_KEY` (sin prefijo `NEXT_PUBLIC_`) con una
+llave de [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+— a diferencia de las de Supabase, esta sí es un secreto real: nunca debe
+llegar al navegador ni exponerse en ningún lado. Sin esto, el botón
+"Generar explicación (IA)" del scorecard (Feature 4) falla.
+
 ### 4. Instalar y correr
 
 ```bash
@@ -110,9 +139,11 @@ Abre [http://localhost:3000](http://localhost:3000) — te debe redirigir a
 3. Como este es un monorepo, en **Root Directory** selecciona
    `w04-proof-of-skill` (no la raíz del repo).
 4. Framework Preset: Next.js (se detecta solo).
-5. En **Environment Variables**, agrega `NEXT_PUBLIC_SUPABASE_URL` y
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY` con los mismos valores de tu
-   `.env.local`. No los pegues en el código ni en el chat — solo en el
+5. En **Environment Variables**, agrega `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `ANTHROPIC_API_KEY` con los mismos
+   valores de tu `.env.local` — marca `ANTHROPIC_API_KEY` como **Secret**,
+   no como Config, ya que a diferencia de la llave anon de Supabase esta
+   sí es sensible. No los pegues en el código ni en el chat — solo en el
    panel de Vercel.
 6. Deploy. Cuando termine, copia la URL pública y regresa a Supabase →
    Authentication → URL Configuration → **Redirect URLs** para agregar

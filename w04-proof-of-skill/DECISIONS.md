@@ -167,3 +167,59 @@ lo era — el usuario lo confirmó al correrlo y recibir el error `42710`.
 Con el `drop policy if exists`, correr el archivo completo de nuevo deja
 las policies con la misma definición, sin error, sin importar cuántas
 veces se corra ni en qué punto del historial de features esté la base.
+
+## 2026-09-06 — Feature 4: explicación del borderline redactada por LLM
+
+**Qué cambió:** `lib/llm.ts` tiene `redactarExplicacionBorderline()`: una
+llamada server-only (`import "server-only"` fuerza el error de build si
+algo la importa desde un componente cliente) a la API de Anthropic,
+modelo `claude-haiku-4-5`, sin streaming ni thinking — la tarea es
+redactar 2–4 oraciones a partir de datos ya calculados, no razonar. El
+system prompt es explícito: usar únicamente los datos que se le pasan
+(rol, score total, `motivos` y desglose que ya salieron de
+`calcularScore()`), nunca inventar un criterio o número, y nunca emitir
+un veredicto ("bueno", "recomendado", "avanzar").
+
+La server action `generateBorderlineExplanation` (en
+`candidates/actions.ts`) recibe solo un `candidateScoreId`: relee la fila
+de `candidate_scores` (RLS de por medio — no puede leer un candidato
+ajeno), **recalcula el score y el flag con `calcularScore()` otra vez en
+vez de confiar en nada que mande el cliente**, y se niega a llamar al LLM
+si `resultado.flagged` es `false` — este endpoint solo existe para
+explicar un borderline, no para opinar sobre cualquier resultado.
+
+En pantalla, el botón "✨ Generar explicación (IA)"
+(`components/BorderlineExplanation.tsx`) solo aparece dentro del banner
+de "Marcado para revisión humana" del scorecard — nunca se llama sola al
+guardar un candidato. La respuesta se muestra en una caja separada,
+etiquetada "Explicación generada por IA — simulada, no es un veredicto".
+
+**Por qué bajo demanda y no automático al calificar:** decisión explícita
+del usuario — cada llamada al LLM cuesta dinero real; que solo se dispare
+si el empleador la pide, viendo ya un resultado flagged, evita gastar en
+scorecards que nadie revisa y no agrega latencia al guardar un candidato.
+
+**Por qué Haiku 4.5 y no un modelo más grande:** decisión explícita del
+usuario — la tarea es reformular en lenguaje natural motivos que las
+reglas ya calcularon (sin razonamiento propio), así que el modelo más
+barato de la familia actual rinde igual por una fracción del costo.
+
+**Implicación de seguridad resuelta:** `ANTHROPIC_API_KEY` vive solo en
+`.env.local` (gitignored) en desarrollo y como env var **secreta** (no
+`NEXT_PUBLIC_`) en Vercel — nunca en el cliente ni en el repo. La llamada
+ocurre 100% server-side (server action), nunca desde el navegador.
+
+**Verificado:** `npx eslint`, `npx tsc --noEmit` y `npm run build` pasan
+limpios. La llamada real al LLM (con una `ANTHROPIC_API_KEY` de verdad)
+queda pendiente de que el usuario la pruebe — ver README.
+
+**Pendiente de que hagas tú:**
+- Conseguir una API key en console.anthropic.com/settings/keys y ponerla
+  en `.env.local` como `ANTHROPIC_API_KEY` (sin prefijo `NEXT_PUBLIC_`).
+- Agregar la misma key a Vercel Production como **Secret** (no Config) —
+  avísame cuando la tengas y la agrego por CLI sin que la pegues en el
+  chat, igual que con las de Supabase.
+- Calificar un candidato que salga flagged, entrar a su scorecard, tocar
+  "Generar explicación (IA)" y confirmar que el texto: (a) no inventa
+  ningún criterio ni número que no esté en el desglose, (b) no dice que
+  el candidato "debe avanzar" ni usa lenguaje de veredicto.
