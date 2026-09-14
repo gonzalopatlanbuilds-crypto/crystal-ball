@@ -75,7 +75,7 @@ export default async function ScreeningDetailPage({
         </p>
       </div>
 
-      <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-6">
+      <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 print:hidden">
         <h2 className="text-sm font-semibold text-zinc-900">Resultado (vista operador)</h2>
         <p className="mt-2 text-sm text-zinc-700">
           Nivel de riesgo:{" "}
