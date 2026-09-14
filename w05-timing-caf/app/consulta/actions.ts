@@ -1,10 +1,13 @@
 "use server";
 
 import { headers } from "next/headers";
+import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { parseConsultaForm } from "@/lib/consulta";
 import { excedeLimite } from "@/lib/rateLimit";
 import { calcularRiesgo } from "@/lib/scoring";
+import { redactarExplicacionPaciente } from "@/lib/llm";
+import { obtenerSiguientePaso, type SiguientePaso } from "@/lib/nextStep";
 import type { RangoEdadValue, SintomaValue } from "@/lib/screenings";
 
 export interface ResultadoConsulta {
@@ -13,6 +16,19 @@ export interface ResultadoConsulta {
   glucoseMgdl: number;
   createdAt: string;
   riesgo: { score: number; nivel: "alto" | "bajo"; motivos: string[] };
+  explicacionIA: string;
+  siguientePaso: SiguientePaso;
+}
+
+// Si el LLM falla (rate limit, sin API key configurada, etc.) el
+// resultado igual se muestra completo — el nivel de riesgo y el
+// siguiente paso concreto (lib/nextStep.ts) NUNCA dependen del LLM.
+// Solo el párrafo de explicación cae a este texto fijo, y el fallo real
+// se loggea server-side para poder diagnosticarlo.
+function explicacionDeRespaldo(nivel: "alto" | "bajo"): string {
+  return nivel === "alto"
+    ? "Tu resultado muestra señales que conviene revisar pronto con personal de salud. No pudimos generar una explicación más detallada en este momento, pero el siguiente paso de abajo sigue aplicando."
+    : "Tu resultado no muestra señales de alerta por ahora. No pudimos generar una explicación más detallada en este momento.";
 }
 
 export type ConsultaFormState =
@@ -80,6 +96,30 @@ export async function buscarTamizaje(
     ageBand: fila.age_band,
   });
 
+  // El siguiente paso es texto fijo — nunca puede quedar vacío para un
+  // resultado de alto riesgo, ni siquiera si el LLM de abajo falla.
+  const siguientePaso = obtenerSiguientePaso(riesgo.nivel);
+
+  let explicacionIA: string;
+  try {
+    explicacionIA = await redactarExplicacionPaciente({
+      nivel: riesgo.nivel,
+      glucoseMgdl: fila.glucose_mgdl,
+      motivos: riesgo.motivos,
+    });
+  } catch (err) {
+    if (err instanceof Anthropic.RateLimitError) {
+      console.error("buscarTamizaje: RateLimitError del LLM:", err.message);
+    } else if (err instanceof Anthropic.AuthenticationError) {
+      console.error("buscarTamizaje: falta configurar ANTHROPIC_API_KEY:", err.message);
+    } else if (err instanceof Anthropic.APIError) {
+      console.error("buscarTamizaje: APIError del LLM:", err.status, err.message);
+    } else {
+      console.error("buscarTamizaje: error inesperado generando explicación:", err);
+    }
+    explicacionIA = explicacionDeRespaldo(riesgo.nivel);
+  }
+
   return {
     status: "encontrado",
     resultado: {
@@ -88,6 +128,8 @@ export async function buscarTamizaje(
       glucoseMgdl: fila.glucose_mgdl,
       createdAt: fila.created_at,
       riesgo,
+      explicacionIA,
+      siguientePaso,
     },
   };
 }

@@ -26,26 +26,23 @@ salud público si llega la interoperabilidad (NOM-024). Ver
 - **Todos los datos de pacientes son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 3 (consulta pública por folio + apellido)
+## Estado actual: Feature 4 (explicación por LLM + siguiente paso)
 
-Implementado: Feature 1 (auth), Feature 2 (captura + scoring + folio) y
-Feature 3 — `/consulta` ahora busca de verdad. La única puerta pública de
-lectura a `screenings` es la función de Postgres `security definer`
-`consultar_tamizaje` (`sql/schema.sql`): filtra por folio **y** apellido
-en el mismo `WHERE`, así que un folio real con apellido equivocado y un
-folio inventado devuelven exactamente el mismo resultado (cero filas) —
-`buscarTamizaje` (`app/consulta/actions.ts`) siempre responde con el
-mismo mensaje genérico en ambos casos, y aplica un rate limit por IP
-(`lib/rateLimit.ts`, 5 intentos/minuto) antes de consultar.
+Implementado: Feature 1 (auth), Feature 2 (captura + scoring + folio),
+Feature 3 (consulta pública rate-limited) y Feature 4 — en el resultado
+de `/consulta`, `redactarExplicacionPaciente()` (`lib/llm.ts`, Claude
+Haiku 4.5) redacta un párrafo en español simple a partir del nivel de
+riesgo ya decidido por reglas, y `obtenerSiguientePaso()`
+(`lib/nextStep.ts`, texto fijo, sin LLM) siempre agrega una clínica +
+horario + acción concreta — nunca vacío en un resultado de alto riesgo,
+ni siquiera si la llamada al LLM falla (en ese caso el párrafo cae a un
+texto de respaldo y el error real se loggea server-side).
 
-**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
-aquí):**
-- Correr el bloque de Feature 3 de `sql/schema.sql` en el SQL Editor de
-  Supabase (crea la función `consultar_tamizaje` y sus grants).
-- En `/consulta`, probar folio+apellido correctos (debe mostrar el
-  resultado), y folio correcto con apellido equivocado / folio inventado
-  (ambos deben dar el mismo "no encontrado").
-- Probar el rate limit con 6+ búsquedas seguidas en menos de un minuto.
+**Pendiente de que hagas tú:**
+- Confirmar que `.env.local` tiene `ANTHROPIC_API_KEY` (ya se copió de
+  w04-proof-of-skill en esta sesión).
+- Probar `/consulta` con un folio de alto riesgo (caja ámbar, con
+  urgencia) y uno de bajo riesgo (caja neutra, sin urgencia).
 
 ## Desarrollo local
 

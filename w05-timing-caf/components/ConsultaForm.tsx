@@ -47,10 +47,33 @@ export default function ConsultaForm({ action }: Props) {
             Lectura de glucosa: {resultado.glucoseMgdl} mg/dL
           </p>
 
-          <p className="mt-6 rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-500">
-            La explicación en lenguaje simple y el siguiente paso concreto llegan en la
-            siguiente feature.
-          </p>
+          <div className="mt-6 rounded-lg bg-zinc-100 p-4 text-left">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+              Explicación generada por IA — simulada, no es un diagnóstico
+            </p>
+            <p className="mt-2 text-sm text-zinc-700">{resultado.explicacionIA}</p>
+          </div>
+
+          <div
+            className={
+              resultado.siguientePaso.urgente
+                ? "mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-left"
+                : "mt-4 rounded-lg border border-zinc-200 bg-white p-4 text-left"
+            }
+          >
+            <p
+              className={
+                resultado.siguientePaso.urgente
+                  ? "text-xs font-medium uppercase tracking-wide text-amber-700"
+                  : "text-xs font-medium uppercase tracking-wide text-zinc-400"
+              }
+            >
+              {resultado.siguientePaso.urgente ? "Siguiente paso — antes de la próxima semana" : "Para tu tranquilidad"}
+            </p>
+            <p className="mt-2 text-sm font-medium text-zinc-900">{resultado.siguientePaso.clinica}</p>
+            <p className="text-sm text-zinc-600">{resultado.siguientePaso.horario}</p>
+            <p className="mt-1 text-sm text-zinc-700">{resultado.siguientePaso.mensaje}</p>
+          </div>
         </div>
       </main>
     );

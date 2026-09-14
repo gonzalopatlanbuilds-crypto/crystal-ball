@@ -205,6 +205,76 @@ aquí):**
 - Probar el rate limit: 6+ búsquedas seguidas en menos de un minuto →
   la última debe dar "Demasiados intentos".
 
+**Cerrado:** el usuario verificó Feature 3 completa — folio+apellido
+correctos muestra el resultado; apellido equivocado y folio inventado dan
+el mismo "no encontrado"; el rate limit corta después de varios intentos
+seguidos con "Demasiados intentos".
+
 **Primer movimiento de la próxima sesión:** Feature 4 (explicación en
 lenguaje simple generada por LLM + siguiente paso concreto para
 resultados de alto riesgo, en la pantalla de resultado de `/consulta`).
+
+## 2026-09-13 — Feature 4: explicación por LLM + siguiente paso concreto
+
+**Qué cambió:** `buscarTamizaje` (`app/consulta/actions.ts`) ahora, tras
+encontrar un match, llama a `redactarExplicacionPaciente()` (`lib/llm.ts`,
+Claude Haiku 4.5) para redactar un párrafo en español simple explicando
+el resultado, y a `obtenerSiguientePaso()` (`lib/nextStep.ts`) para el
+siguiente paso concreto. Ambas llamadas reciben el `nivel` de riesgo ya
+decidido por `calcularRiesgo()` — el LLM nunca clasifica nada, solo
+redacta a partir de un nivel y unos motivos que ya vienen resueltos (ver
+el mismo principio en w04-proof-of-skill/DECISIONS.md → "Alcance de
+Feature 4").
+
+**Por qué el siguiente paso es texto fijo, no generado por el LLM:** el
+packet (Condición 1 del Blueprint, "nunca un dead-end") exige que un
+resultado de alto riesgo siempre traiga una acción concreta — eso no
+puede depender de si la llamada al LLM tuvo éxito: el LLM tiene rate
+limits, puede no tener API key configurada, puede fallar por cualquier
+razón de red.
+`obtenerSiguientePaso()` es lógica de reglas pura (como `calcularRiesgo`)
+que nunca toca la red, así que el siguiente paso aparece siempre, incluso
+si `redactarExplicacionPaciente()` lanza una excepción — en ese caso el
+párrafo de explicación cae a `explicacionDeRespaldo()` (texto fijo
+también) y el error real se loggea server-side (mismo patrón que el bug
+de Feature 2: nunca fallar en silencio).
+
+**Por qué la llamada al LLM es automática y no un botón (a diferencia de
+w04):** en w04 el botón evitaba gastar en scorecards que nadie revisa. En
+Feature 3 de w05, cada consulta pública exitosa la inició el propio
+paciente para ver justo este resultado — no hay un escenario de "capturé
+esto pero quizás nadie lo mire después"; además, la persona objetivo del
+packet (Layer 1: 54 años, lee con dificultad, celular prestado) no debe
+tener que encontrar y presionar un botón extra para obtener la parte más
+importante de la pantalla. Automática es más accesible por diseño
+(Condición 4).
+
+**Framing distinto por nivel (Feature 4, acceptance criteria):** riesgo
+alto muestra el siguiente paso en una caja ámbar con encabezado
+"Siguiente paso — antes de la próxima semana"; riesgo bajo lo muestra en
+una caja neutra con encabezado "Para tu tranquilidad", sin lenguaje de
+urgencia — el texto de `obtenerSiguientePaso()` también difiere ("no es
+urgente" para bajo riesgo vs. una fecha concreta para alto riesgo).
+
+**Piso de seguridad — estado tras Feature 4:**
+1. Sin llaves en el repo — ✅ (`ANTHROPIC_API_KEY` solo en `.env.local` /
+   Vercel env vars, nunca en el código; `lib/llm.ts` importa
+   `"server-only"` así que ni por error se puede importar desde un
+   client component).
+2–5. Sin cambios respecto a Feature 3.
+
+**Pendiente de que hagas tú:**
+- Confirmar que tienes `ANTHROPIC_API_KEY` en `.env.local` (ya debería
+  estar — se copió de w04-proof-of-skill/.env.local en esta sesión).
+- Probar `/consulta` con un folio de alto riesgo → debe aparecer la caja
+  ámbar con clínica + horario + explicación en lenguaje simple.
+- Probar con un folio de bajo riesgo → caja neutra, sin lenguaje urgente.
+- Opcional: para ver el fallback funcionar, borra momentáneamente
+  `ANTHROPIC_API_KEY` de `.env.local`, reinicia `npm run dev`, y confirma
+  que igual aparece el siguiente paso y un texto de explicación (el de
+  respaldo) — luego vuelve a poner la llave real.
+
+**Primer movimiento de la próxima sesión:** Feature 5 (pase de prueba
+mecánica del packet, encontrar y arreglar al menos un bug real, redeploy
+— y antes de eso, configurar el proyecto en Vercel con las env vars y
+agregar la redirect URL de producción a Supabase).
