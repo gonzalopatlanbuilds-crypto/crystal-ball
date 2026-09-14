@@ -26,24 +26,27 @@ salud público si llega la interoperabilidad (NOM-024). Ver
 - **Todos los datos de pacientes son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 1 (auth + shell vacío)
+## Estado actual: Feature 2 (captura CAF + scoring por reglas + folio)
 
-Implementado: Supabase Auth con Google para operadores de CAF,
-`app/(caf)/layout.tsx` redirige a `/login` si no hay sesión,
-`app/(caf)/dashboard/page.tsx` es el shell vacío autenticado, y
-`/consulta` (mockup 2 del packet, sin lógica todavía) carga público desde
-el primer commit — nunca detrás del auth check.
+Implementado: Feature 1 (auth con Google para operadores, `/consulta`
+público desde el primer commit) y Feature 2 — `/screenings/new` captura
+un tamizaje simulado (glucosa + cuestionario de riesgo), `crearTamizaje`
+(`app/(caf)/screenings/actions.ts`) valida server-side con zod, calcula
+el riesgo con `calcularRiesgo()` (`lib/scoring.ts`, lógica de reglas pura,
+sin IO) y genera un folio único (`MX-XXXX-XXX`, alfabeto sin caracteres
+ambiguos). `/screenings/[id]` es el comprobante imprimible con el folio
+en grande. El score y el nivel de riesgo nunca se guardan precomputados
+— se recalculan siempre a partir de los insumos crudos guardados en
+`screenings`.
 
-**Pendiente de que hagas tú (no puedo crear el proyecto de Supabase ni el
-cliente OAuth desde aquí):**
-- Crear un proyecto de Supabase para esta semana (o reusar uno existente
-  si así lo decides) y un cliente OAuth de Google.
-- Copiar `.env.local.example` a `.env.local` y llenar
-  `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-- Confirmar sign-in real end-to-end en local: `/login` → Google → aterrizas
-  en `/dashboard` con tu email visible en el header.
-- Confirmar que `/consulta` carga sin sesión iniciada (en una ventana de
-  incógnito, por ejemplo).
+**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
+aquí):**
+- Correr el bloque de Feature 2 de `sql/schema.sql` en el SQL Editor de
+  Supabase (crea la tabla `screenings` con RLS).
+- Capturar un tamizaje de alto riesgo y uno de bajo riesgo y confirmar
+  folios distintos (ver DECISIONS.md para el cálculo verificado a mano).
+- Crear una segunda cuenta de Google de prueba y confirmar que no ve los
+  tamizajes de la primera (ni por URL directa a `/screenings/<id>`).
 
 ## Desarrollo local
 
