@@ -118,6 +118,27 @@ aquí):**
   tamizajes de la primera cuenta en `/dashboard` (ni entrando directo a la
   URL `/screenings/<id>` del primero — debe dar 404).
 
-**Primer movimiento de la próxima sesión:** una vez confirmes RLS con las
-dos cuentas, seguimos con Feature 3 (consulta pública por folio +
-apellido vía función `security definer`, rate-limited).
+**Bug encontrado al verificar Feature 2:** el primer intento de guardar un
+tamizaje fallaba con "No se pudo guardar el tamizaje" sin más detalle — el
+server action no loggeaba el error real de Supabase, así que era
+imposible diagnosticar a distancia. Fix: `console.error` del error
+completo en la rama que no es `unique_violation`
+(`app/(caf)/screenings/actions.ts`). Con eso se vio el error real:
+`PGRST205 — Could not find the table 'public.screenings' in the schema
+cache"` — la tabla nunca se había creado porque el bloque de Feature 2 de
+`sql/schema.sql` no se había corrido todavía en Supabase. No era un bug
+de código, era el paso pendiente de "correr el SQL" — pero sin el log
+no había forma de distinguir eso de un bug real.
+
+**Cerrado:** el usuario corrió `sql/schema.sql` en Supabase y verificó
+Feature 2 completa:
+- Caso alto riesgo (glucosa 210, antecedente sí, 1 síntoma, edad 60+):
+  score 80 (40 + 15 + 10 + 15) → **alto**. Coincide con `calcularRiesgo()`.
+- Caso bajo riesgo (glucosa 95, sin antecedente, sin síntomas, <40):
+  score 0 → **bajo**.
+- Folios distintos por captura (`MX-UU74-JPS`, `MX-TYQV-C8E`).
+- Segunda cuenta de Google: dashboard vacío, URL directa al
+  `/screenings/<id>` de la primera cuenta da 404 — RLS confirmado.
+
+**Primer movimiento de la próxima sesión:** Feature 3 (consulta pública
+por folio + apellido vía función `security definer`, rate-limited).

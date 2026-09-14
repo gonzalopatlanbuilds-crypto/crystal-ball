@@ -63,6 +63,7 @@ export async function crearTamizaje(
 
     // 23505 = unique_violation — folio ya existe, reintenta con uno nuevo.
     if (error.code !== "23505") {
+      console.error("crearTamizaje: insert en screenings falló", error);
       return { error: "No se pudo guardar el tamizaje. Intenta de nuevo." };
     }
   }
