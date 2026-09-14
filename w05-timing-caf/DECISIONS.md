@@ -142,3 +142,69 @@ Feature 2 completa:
 
 **Primer movimiento de la próxima sesión:** Feature 3 (consulta pública
 por folio + apellido vía función `security definer`, rate-limited).
+
+## 2026-09-13 — Feature 3: consulta pública por folio + apellido, rate-limited
+
+**Qué cambió:** función de Postgres `security definer`
+`consultar_tamizaje(p_folio, p_apellido)` (`sql/schema.sql`) — la única
+puerta pública de lectura a `screenings`. Ninguna policy de RLS permite
+select sin `auth.uid() = operator_id`, así que esta función corre con
+privilegios propios (bypassa RLS internamente) pero solo devuelve los
+campos que el paciente necesita ver, nunca `operator_id` ni teléfono, y
+solo si `folio` **y** `apellido` coinciden en el mismo `WHERE` — nunca
+una consulta en dos pasos (buscar por folio, comparar apellido después),
+porque eso sí permitiría distinguir "folio existe, apellido mal" de
+"folio no existe" comparando tiempos de respuesta o resultados
+intermedios.
+
+`app/consulta/actions.ts` (`buscarTamizaje`) valida el input con zod
+(`lib/consulta.ts`), aplica un rate limit por IP
+(`excedeLimite()`, `lib/rateLimit.ts`) antes de llamar al RPC, y devuelve
+**el mismo mensaje genérico** ("No encontramos ese resultado...") sin
+importar si el folio no existe, si el apellido no coincide, o si la
+llamada a Supabase falló por otra razón (ese último caso sí se loggea
+server-side con `console.error` — aplicando la lección de la Feature 2:
+nunca de nuevo un fallo silencioso sin rastro).
+
+`components/ConsultaForm.tsx` (client) — mismo componente maneja el
+formulario y, tras una búsqueda exitosa, el panel de resultado (folio,
+nombre, fecha, nivel de riesgo, "Datos simulados"). No hay redirect a
+otra URL con el folio/apellido como query param — evita dejarlos en el
+historial del navegador o en logs de acceso.
+
+**Rate limiting — limitación conocida, documentada a propósito:** el
+limiter (`lib/rateLimit.ts`) vive en memoria del proceso (Map por IP,
+ventana de 60s, máx. 5 intentos) — así lo permite explícitamente el
+implementation prompt para este alcance, pero en Vercel cada instancia
+serverless tiene su propia memoria: no comparte el conteo entre
+instancias ni sobrevive un cold start. Para producción real esto
+necesitaría una tabla de Supabase o Upstash Redis compartido. Es un
+límite de alcance conocido, no un bug escondido — igual que los otros
+scope cuts del packet.
+
+**Piso de seguridad — estado tras Feature 3:**
+1. Sin llaves en el repo — ✅ (sin cambios).
+2. Auth solo operador, `/consulta` sin login — ✅ (sin cambios).
+3. RLS en `screenings` — ✅ (sin cambios); la función pública no la
+   rodea, es la única puerta explícita.
+4. Validación server-side — ✅ completa: glucosa/cuestionario (Feature 2)
+   + folio/apellido validados con zod y la consulta pública rate-limited
+   (Feature 3).
+5. Datos simulados etiquetados en pantalla — ✅ también en el resultado
+   de la consulta pública.
+
+**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
+aquí):**
+- Correr el bloque de Feature 3 de `sql/schema.sql` en el SQL Editor de
+  Supabase (crea la función `consultar_tamizaje` y sus grants).
+- Probar `/consulta` con el folio + apellido correctos de un tamizaje que
+  ya capturaste → debe mostrar el resultado.
+- Probar con folio correcto + apellido equivocado, y con un folio
+  inventado → ambos deben dar el mismo mensaje genérico de "no
+  encontrado".
+- Probar el rate limit: 6+ búsquedas seguidas en menos de un minuto →
+  la última debe dar "Demasiados intentos".
+
+**Primer movimiento de la próxima sesión:** Feature 4 (explicación en
+lenguaje simple generada por LLM + siguiente paso concreto para
+resultados de alto riesgo, en la pantalla de resultado de `/consulta`).

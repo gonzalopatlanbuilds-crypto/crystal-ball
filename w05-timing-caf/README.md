@@ -26,27 +26,26 @@ salud público si llega la interoperabilidad (NOM-024). Ver
 - **Todos los datos de pacientes son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 2 (captura CAF + scoring por reglas + folio)
+## Estado actual: Feature 3 (consulta pública por folio + apellido)
 
-Implementado: Feature 1 (auth con Google para operadores, `/consulta`
-público desde el primer commit) y Feature 2 — `/screenings/new` captura
-un tamizaje simulado (glucosa + cuestionario de riesgo), `crearTamizaje`
-(`app/(caf)/screenings/actions.ts`) valida server-side con zod, calcula
-el riesgo con `calcularRiesgo()` (`lib/scoring.ts`, lógica de reglas pura,
-sin IO) y genera un folio único (`MX-XXXX-XXX`, alfabeto sin caracteres
-ambiguos). `/screenings/[id]` es el comprobante imprimible con el folio
-en grande. El score y el nivel de riesgo nunca se guardan precomputados
-— se recalculan siempre a partir de los insumos crudos guardados en
-`screenings`.
+Implementado: Feature 1 (auth), Feature 2 (captura + scoring + folio) y
+Feature 3 — `/consulta` ahora busca de verdad. La única puerta pública de
+lectura a `screenings` es la función de Postgres `security definer`
+`consultar_tamizaje` (`sql/schema.sql`): filtra por folio **y** apellido
+en el mismo `WHERE`, así que un folio real con apellido equivocado y un
+folio inventado devuelven exactamente el mismo resultado (cero filas) —
+`buscarTamizaje` (`app/consulta/actions.ts`) siempre responde con el
+mismo mensaje genérico en ambos casos, y aplica un rate limit por IP
+(`lib/rateLimit.ts`, 5 intentos/minuto) antes de consultar.
 
 **Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
 aquí):**
-- Correr el bloque de Feature 2 de `sql/schema.sql` en el SQL Editor de
-  Supabase (crea la tabla `screenings` con RLS).
-- Capturar un tamizaje de alto riesgo y uno de bajo riesgo y confirmar
-  folios distintos (ver DECISIONS.md para el cálculo verificado a mano).
-- Crear una segunda cuenta de Google de prueba y confirmar que no ve los
-  tamizajes de la primera (ni por URL directa a `/screenings/<id>`).
+- Correr el bloque de Feature 3 de `sql/schema.sql` en el SQL Editor de
+  Supabase (crea la función `consultar_tamizaje` y sus grants).
+- En `/consulta`, probar folio+apellido correctos (debe mostrar el
+  resultado), y folio correcto con apellido equivocado / folio inventado
+  (ambos deben dar el mismo "no encontrado").
+- Probar el rate limit con 6+ búsquedas seguidas en menos de un minuto.
 
 ## Desarrollo local
 

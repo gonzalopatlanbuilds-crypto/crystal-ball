@@ -54,10 +54,48 @@ create policy "operators insert own screenings"
   with check (auth.uid() = operator_id);
 
 -- ============================================================
--- Feature 3 (pendiente): la consulta pública por folio + apellido NO va
--- a leer esta tabla directamente (ninguna policy aquí permite select sin
--- auth.uid() = operator_id) — va a pasar por una función de Postgres
--- `security definer`, acotada a devolver solo los campos que el paciente
--- necesita ver, nunca operator_id ni datos de otros pacientes. Se agrega
--- en la siguiente sesión junto con el rate limiting.
+-- Feature 3: consulta pública por folio + apellido, sin login. Ninguna
+-- policy de arriba permite select sin auth.uid() = operator_id, así que
+-- esta función `security definer` es la ÚNICA puerta pública de lectura
+-- a `screenings` — corre con los privilegios de quien la creó (bypassa
+-- RLS internamente) pero devuelve solo los campos que el paciente
+-- necesita ver: nunca operator_id, nunca teléfono, nunca filas de otros
+-- pacientes salvo el match exacto de folio + apellido.
+--
+-- Por qué no filtra en dos pasos (primero por folio, luego compara
+-- apellido en la app): comparar ambos en el mismo WHERE hace que un
+-- folio real con apellido equivocado y un folio inexistente devuelvan
+-- exactamente lo mismo (cero filas) — el server action de arriba nunca
+-- tiene información para distinguir los dos casos, así que no puede
+-- filtrarla aunque quisiera. Esa es la defensa real contra enumeración
+-- de folios, no una validación en la capa de aplicación.
 -- ============================================================
+
+create or replace function public.consultar_tamizaje(p_folio text, p_apellido text)
+returns table (
+  folio text,
+  patient_first_name text,
+  glucose_mgdl integer,
+  family_history boolean,
+  symptoms jsonb,
+  age_band text,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select s.folio, s.patient_first_name, s.glucose_mgdl, s.family_history,
+         s.symptoms, s.age_band, s.created_at
+  from public.screenings s
+  where s.folio = upper(trim(p_folio))
+    and lower(trim(s.patient_last_name)) = lower(trim(p_apellido))
+  limit 1;
+$$;
+
+-- Postgres da EXECUTE a PUBLIC por default en funciones nuevas — se
+-- revoca explícito y se vuelve a otorgar solo a los roles que de verdad
+-- necesitan llamarla, para que la intención quede escrita, no implícita.
+revoke all on function public.consultar_tamizaje(text, text) from public;
+grant execute on function public.consultar_tamizaje(text, text) to anon, authenticated;
