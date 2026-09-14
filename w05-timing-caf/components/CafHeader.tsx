@@ -4,7 +4,7 @@ interface Props {
 
 export default function CafHeader({ email }: Props) {
   return (
-    <header className="bg-zinc-900 text-white">
+    <header className="bg-zinc-900 text-white print:hidden">
       <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
         <span className="text-lg font-semibold">Folio CAF — Consola del operador</span>
         {email && (

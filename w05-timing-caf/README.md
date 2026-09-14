@@ -26,23 +26,26 @@ salud público si llega la interoperabilidad (NOM-024). Ver
 - **Todos los datos de pacientes son inventados**, etiquetados en pantalla
   como "Datos simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 4 (explicación por LLM + siguiente paso)
+## Estado actual: Feature 5 (bug de la prueba mecánica arreglado, listo para deploy)
 
 Implementado: Feature 1 (auth), Feature 2 (captura + scoring + folio),
-Feature 3 (consulta pública rate-limited) y Feature 4 — en el resultado
-de `/consulta`, `redactarExplicacionPaciente()` (`lib/llm.ts`, Claude
-Haiku 4.5) redacta un párrafo en español simple a partir del nivel de
-riesgo ya decidido por reglas, y `obtenerSiguientePaso()`
-(`lib/nextStep.ts`, texto fijo, sin LLM) siempre agrega una clínica +
-horario + acción concreta — nunca vacío en un resultado de alto riesgo,
-ni siquiera si la llamada al LLM falla (en ese caso el párrafo cae a un
-texto de respaldo y el error real se loggea server-side).
+Feature 3 (consulta pública rate-limited), Feature 4 (explicación por
+LLM + siguiente paso) y el pase de prueba mecánica de Feature 5.
+
+**Bug encontrado y arreglado:** el comprobante imprimible
+(`/screenings/[id]`) imprimía también el header de la consola del
+operador (su email + botón "Cerrar sesión"), porque vive dentro del
+layout `(caf)` que siempre lo renderiza. Fix: `print:hidden` en
+`components/CafHeader.tsx` — ver DECISIONS.md para el detalle.
 
 **Pendiente de que hagas tú:**
-- Confirmar que `.env.local` tiene `ANTHROPIC_API_KEY` (ya se copió de
-  w04-proof-of-skill en esta sesión).
-- Probar `/consulta` con un folio de alto riesgo (caja ámbar, con
-  urgencia) y uno de bajo riesgo (caja neutra, sin urgencia).
+- Confirmar el fix: vista previa de impresión de un `/screenings/<id>` ya
+  no debe mostrar tu email ni "Cerrar sesión".
+- Deploy a Vercel: nuevo proyecto con **Root Directory** `w05-timing-caf`,
+  las 3 env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `ANTHROPIC_API_KEY`), y agregar
+  `https://<tu-app>.vercel.app/auth/callback` a Redirect URLs en Supabase.
+- Confirmar login, captura y `/consulta` ya en la URL de producción.
 
 ## Desarrollo local
 
@@ -53,7 +56,11 @@ npm run dev
 
 ## Deploy
 
-Proyecto pensado para Vercel (free tier). Variables de entorno
+Proyecto pensado para Vercel (free tier), como subcarpeta de un
+monorepo — al crear el proyecto en Vercel, configura **Root Directory**
+= `w05-timing-caf`. Variables de entorno
 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
 `ANTHROPIC_API_KEY`) se configuran en el dashboard de Vercel, nunca en el
-repo.
+repo. No olvides agregar la callback URL de producción
+(`https://<tu-app>.vercel.app/auth/callback`) a Redirect URLs en Supabase
+— sin eso el login con Google funciona en local pero falla en Vercel.

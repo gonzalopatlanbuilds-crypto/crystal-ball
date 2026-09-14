@@ -274,7 +274,72 @@ urgente" para bajo riesgo vs. una fecha concreta para alto riesgo).
   que igual aparece el siguiente paso y un texto de explicación (el de
   respaldo) — luego vuelve a poner la llave real.
 
+**Cerrado:** el usuario verificó Feature 4 completa en ambos niveles —
+riesgo bajo (caja neutra, sin urgencia) y riesgo alto (caja ámbar,
+clínica + dirección + horario + instrucción de llevar el folio impreso),
+con la explicación de IA correctamente etiquetada como simulada en los
+dos casos.
+
 **Primer movimiento de la próxima sesión:** Feature 5 (pase de prueba
 mecánica del packet, encontrar y arreglar al menos un bug real, redeploy
 — y antes de eso, configurar el proyecto en Vercel con las env vars y
 agregar la redirect URL de producción a Supabase).
+
+## 2026-09-13 — Feature 5: pase de prueba mecánica + bug encontrado y arreglado
+
+**Pase de prueba mecánica (`docs/PACKET.md`):** capturar un paciente de
+alto riesgo y uno de bajo riesgo (ya hecho al verificar Feature 2, folios
+`MX-UU74-JPS` y `MX-TYQV-C8E`, distintos); confirmar que `/consulta`
+regresa el registro correcto con folio+apellido y rechaza una
+combinación incorrecta (ya confirmado al verificar Feature 3); confirmar
+que una segunda cuenta de operador no ve los tamizajes de la primera (ya
+confirmado al verificar Feature 2). Lo que faltaba de este pase era
+revisar con lupa el "comprobante impreso" en sí — la pieza física que el
+packet dice que el paciente se lleva a casa.
+
+**Bug encontrado:** `/screenings/[id]` (el comprobante) vive dentro del
+grupo de rutas `(caf)`, cuyo layout siempre renderiza `CafHeader` arriba
+del contenido — con el email del operador y un botón "Cerrar sesión". Al
+imprimir el comprobante con `window.print()` (botón de la propia
+pantalla), ese header **se imprimía también**: el paciente se habría
+llevado a casa un papel con el correo del operador del CAF y un control
+de sesión interno, algo que no pertenece a un documento pensado para
+salir del CAF. `print:hidden` ya escondía el botón de "Imprimir" y el
+link "← Volver" (`app/(caf)/screenings/[id]/page.tsx`), pero nadie le
+había puesto esa misma clase al header del layout — se probó "¿el botón
+de imprimir desaparece al imprimir?" pero no "¿qué más queda en la hoja
+además del comprobante?".
+
+**Fix:** una línea — `print:hidden` agregado al `<header>` de
+`components/CafHeader.tsx`. Con eso, lo único que queda en la vista de
+impresión es el comprobante mismo (folio, nombre, aviso de guardar el
+folio+apellido) — la sección "Resultado (vista operador)" de abajo
+también se imprime hoy (no tiene `print:hidden`), lo cual es una decisión
+consciente, no un descuido: esa sección ya está claramente rotulada
+"vista operador", así que si el CAF decide no compartirla es responsabi-
+lidad de imprimir/recortar, no algo que el sistema deba ocultar por
+default — pero el email y el botón de sesión del operador nunca debieron
+estar ahí para empezar.
+
+**Piso de seguridad — estado tras Feature 5:** sin cambios respecto a
+Feature 4 (los 5 puntos siguen ✅ o con su diferido documentado).
+
+**Pendiente de que hagas tú:**
+- Confirmar el fix: entra a un `/screenings/<id>`, abre la vista previa
+  de impresión (Ctrl+P / Cmd+P) y confirma que el header con tu email y
+  "Cerrar sesión" ya no aparece — solo el comprobante (y, si quieres, la
+  sección de vista operador de abajo).
+- Deploy: crear el proyecto en Vercel apuntando a este repo con **Root
+  Directory** `w05-timing-caf`, agregar las 3 env vars
+  (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `ANTHROPIC_API_KEY`) en el dashboard de Vercel, y agregar
+  `https://<tu-app>.vercel.app/auth/callback` a la lista de Redirect URLs
+  en Supabase (Authentication → URL Configuration) — sin esto el login
+  con Google fallará en producción aunque funcione en local.
+- Confirmar login con Google, captura de un tamizaje, y `/consulta` ya
+  en la URL de producción de Vercel.
+
+**Primer movimiento de la próxima sesión (o de cierre del proyecto):**
+una vez el deploy esté arriba y verificado, el packet ya está completo —
+quedaría, si el usuario quiere, el "persona test" (Layer 1) narrado sobre
+capturas de pantalla de ambas pantallas, descrito en `docs/PACKET.md`.
