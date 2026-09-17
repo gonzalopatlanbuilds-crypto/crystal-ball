@@ -74,3 +74,60 @@ el cliente OAuth desde aquí):**
 **Primer movimiento de la próxima sesión:** Feature 2 (pantalla de
 captura del hallazgo crítico — mockup 1 — con tabla `findings` y su
 RLS).
+
+## 2026-09-17 — Feature 2: loguear hallazgo crítico + RLS
+
+**Qué cambió:** tabla `findings` (`sql/schema.sql`) con RLS — policy de
+select por `org_id` propio, y de insert que exige en el mismo `WITH
+CHECK` que `reporter_id = auth.uid()` (nadie loguea en nombre de otro),
+`org_id` propio, y que el `owner_id` elegido pertenezca a esa misma
+organización (subquery contra `profiles`). Sin policy de update/delete
+todavía — el status de un finding solo cambiará con las Features 3 y 4.
+
+Pantalla `/findings/new` (mockup 1, componente `FindingForm`): escenario
+de simulacro (lista cerrada en `lib/findings.ts` — un hallazgo "ligado a
+un escenario de simulacro, etiquetado" es el requisito de evidencia de
+simulación del Dragon Stack de esta semana), descripción, acción
+correctiva, owner (elegido de un `<select>` poblado con los miembros de
+tu organización, nunca texto libre — así el `owner_id` que llega al
+server action ya es un uuid real de alguien de tu escuela) y fecha
+límite. Los 4 campos son `required` en el HTML y, server-side, el server
+action `crearHallazgo` (`app/(app)/findings/actions.ts`) los vuelve a
+validar con zod (`lib/findings.ts`) antes de intentar el insert — el
+`required` del navegador es UX, no la validación real.
+
+`/dashboard` ahora lista los findings de la organización (con badge de
+status) y `/findings/[id]` es el detalle — ambos ya filtrados por RLS,
+sin `.eq("org_id", ...)` explícito en el código: la policy de select ya
+lo hace, así que un intento de entrar directo a la URL de un finding de
+otra organización da 404 (`notFound()` cuando la fila no llega).
+
+**Piso de seguridad — estado tras Feature 2:**
+1. Sin llaves en el repo — ✅ (sin cambios).
+2. Google sign-in para todos — ✅ (sin cambios).
+3. RLS en `findings` — ✅ select/insert por `org_id`, owner validado
+   contra la misma org. RLS en `closures` sigue ⏳ diferido a Feature 3.
+4. Validación server-side — ✅ los 4 campos requeridos de `findings`
+   (zod + `required` en HTML). Foto de cierre obligatoria sigue ⏳
+   diferido a Feature 3 (esa pantalla no existe todavía).
+5. Datos simulados etiquetados en pantalla — ✅ aviso en `/findings/new`
+   y `/dashboard`.
+6. Owner nunca puede ser también verificador — ⏳ sigue diferido a
+   Feature 4 (no hay revisión todavía).
+
+**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
+aquí):**
+- Correr el bloque de Feature 2 de `sql/schema.sql` completo en el SQL
+  Editor de Supabase (crea la tabla `findings` con su RLS).
+- Con la primera cuenta, loguear un hallazgo asignándolo a la segunda
+  cuenta de prueba (deben estar en la misma organización, vía el código
+  de join de la Feature 1).
+- Confirmar que el formulario no deja enviar sin llenar los 4 campos
+  (bórralos uno por uno y confirma que el navegador bloquea el submit).
+- Con una tercera cuenta en una organización *distinta*, confirmar que
+  `/dashboard` no muestra el hallazgo de la primera organización, y que
+  entrar directo a la URL `/findings/<id>` del primero da 404.
+
+**Primer movimiento de la próxima sesión:** Feature 3 (envío de evidencia
+de cierre — foto obligatoria — más el flag de cierre-mismo-día y la nota
+asistiva de visión por IA).

@@ -155,3 +155,55 @@ $$;
 
 revoke all on function public.join_org(text) from public;
 grant execute on function public.join_org(text) to authenticated;
+
+-- ============================================================
+-- Feature 2: findings — hallazgo crítico logueado por un coordinador
+-- durante un simulacro, con acción correctiva y owner asignado.
+-- ============================================================
+
+create table if not exists public.findings (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.orgs (id) on delete cascade,
+  reporter_id uuid not null references auth.users (id) on delete cascade,
+  owner_id uuid not null references auth.users (id) on delete cascade,
+  scenario_label text not null check (char_length(scenario_label) between 1 and 160),
+  description text not null check (char_length(description) between 1 and 2000),
+  corrective_action text not null check (char_length(corrective_action) between 1 and 2000),
+  deadline date not null,
+  -- pending_review/approved/rejected llegan con las Features 3 y 4 — la
+  -- columna existe desde ahora para no tener que migrar el status más
+  -- tarde.
+  status text not null default 'open' check (status in ('open', 'pending_review', 'approved', 'rejected')),
+  created_at timestamptz not null default now()
+);
+
+alter table public.findings enable row level security;
+
+drop policy if exists "members select own org findings" on public.findings;
+create policy "members select own org findings"
+  on public.findings for select
+  using (
+    org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+  );
+
+-- El insert exige, en el mismo WHERE, que quien loguea el hallazgo sea el
+-- reporter (no se puede loguear en nombre de otro), que el org_id sea el
+-- propio, y que el owner_id asignado pertenezca a esa misma organización
+-- — así un coordinador no puede, ni por error de UI ni por request directo,
+-- asignar el hallazgo a alguien fuera de su escuela.
+drop policy if exists "members insert findings in own org" on public.findings;
+create policy "members insert findings in own org"
+  on public.findings for insert
+  with check (
+    reporter_id = auth.uid()
+    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and exists (
+      select 1 from public.profiles po
+      where po.id = owner_id and po.org_id = findings.org_id
+    )
+  );
+
+-- Sin policy de update/delete todavía: el estado de un finding solo
+-- cambia a través de las server actions de las Features 3 y 4, que traen
+-- su propia policy de update más restrictiva (nunca abierta a cualquier
+-- campo ni a cualquier estado).

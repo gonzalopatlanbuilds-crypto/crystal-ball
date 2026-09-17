@@ -25,7 +25,7 @@ completo.
 - **Todos los datos son inventados**, etiquetados en pantalla como "Datos
   simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 1 (auth + organizaciones + shell vacío)
+## Estado actual: Feature 2 (loguear hallazgo crítico + RLS)
 
 ## Desarrollo local
 
