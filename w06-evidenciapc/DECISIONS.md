@@ -405,3 +405,123 @@ SQL, a diferencia del fix anterior:**
   `/onboarding`.
 - Push del código ya hecho — falta el redeploy en Vercel (automático si
   detecta el push; si no, dispáralo a mano).
+
+## 2026-09-17 — Fix preventivo (sin probar aún): mensaje explícito de owner≠verificador
+
+**Qué cambió, y por qué está marcado "preventivo":** antes de correr la
+prueba mecánica pendiente desde la Feature 4 (aprobar/rechazar con
+cuentas A/B/C), se detectó por inspección de código — no por una prueba
+real todavía — que `/findings/[id]` (`app/(app)/findings/[id]/page.tsx`)
+no tenía manera de volver a `/dashboard`, y que cuando el propio owner
+ve su hallazgo con un cierre pendiente, la sección de revisión
+simplemente no se renderiza (`puedeRevisar` es `false` para él) —
+indistinguible de un bug a simple vista. Se agregó un link "Volver al
+dashboard" y un aviso ámbar explícito (`bloqueadoPorSerOwner`) que
+explica que la regla de verificación independiente es la que está
+bloqueando esa sección, no una falla.
+
+**Este commit (`c0e385a`) no reemplaza la prueba mecánica pendiente** —
+solo mejora lo que se va a *ver* durante ella. Sigue sin confirmarse
+nada de esto con cuentas reales:
+- Que el SQL de la Feature 4 (trigger `closures_verificador_no_es_owner`,
+  trigger `findings_inmutable_tras_aprobacion`) esté corrido en Supabase.
+- Que el fix de recursión de `profiles` (`my_org_id()`, entrada
+  anterior) esté corrido en Supabase.
+- Que el deploy en Vercel tenga estos tres commits arriba (`64b1d23`,
+  `1af46c1`, `c0e385a`).
+- Que aprobar/rechazar/inmutabilidad funcionen de verdad con cuentas
+  A/B/C, en local o en producción.
+
+**Primer movimiento de la próxima sesión (o de continuar esta):**
+correr, sin atajos, el pase de prueba mecánica completo que ya estaba
+pendiente desde la Feature 4 — ver checklist debajo — y solo entonces
+dar por cerradas Features 4 y 5 en firme.
+
+**Decisión de alcance para esta prueba:** se corre en producción, con
+solo 2 cuentas (A = owner, B = verificador), no 3. Se omite la cuenta C
+(aislamiento entre organizaciones distintas) a propósito — ese patrón de
+RLS vía `org_id`/`my_org_id()` es el mismo que ya se validó en proyectos
+anteriores con la misma arquitectura (`w04-proof-of-skill`,
+`w05-timing-caf`), así que no aporta información nueva repetirlo aquí.
+Lo que esta prueba sí necesita confirmar, porque es código nuevo de esta
+semana, es la regla owner≠verificador y la inmutabilidad
+post-aprobación.
+
+## 2026-09-17 — Bug real de Feature 5: Server Action rechazaba fotos >1 MB (413)
+
+**El bug que la prueba mecánica de Feature 4 estaba buscando** (y que
+cumple el requisito de la Feature 5 de "encontrar y arreglar un bug"
+mediante prueba mecánica real, no solo por inspección): al cerrar un
+segundo hallazgo con una foto de evidencia más pesada que la del primer
+intento, el finding se quedaba en `open` y no aparecía ningún cierre en
+el historial — como si el envío nunca hubiera llegado a ningún lado.
+
+Se descartó la hipótesis inicial (timeout del serverless function por la
+llamada a Claude Haiku en `lib/vision.ts`, ver conversación) revisando el
+log real de Vercel, que mostró el error verdadero:
+
+```
+Error: Body exceeded 1 MB limit.
+To configure the body size limit for Server Actions, see:
+https://nextjs.org/docs/app/api-reference/next-config-js/serverActions#bodysizelimit
+statusCode: 413
+```
+
+**Causa:** Next.js limita a 1 MB por defecto el body de una Server
+Action — límite que nunca se tocó en `next.config.ts`. El chequeo
+server-side de tamaño ya existía (`FOTO_MAX_BYTES = 8 * 1024 * 1024` en
+`lib/closures.ts`, y su uso en `enviarCierre`,
+`app/(app)/closures/actions.ts`), pero es inútil contra este límite
+porque Next.js rechaza el request *antes* de que el código de la acción
+llegue a ejecutarse — nunca llega a Storage, a la IA, ni al insert. La
+foto del primer hallazgo (que sí funcionó) simplemente pesaba menos de
+1 MB por casualidad.
+
+**Fix — tres partes:**
+1. `next.config.ts`: `experimental.serverActions.bodySizeLimit: "10mb"`
+   — por encima del límite server-side de 8 MB que ya existía, con
+   margen para el resto del multipart (descripción, boundary).
+2. `app/(app)/closures/actions.ts`: se quitó una copia local duplicada
+   de `FOTO_MAX_BYTES` (redefinida ahí desde la Feature 3 en vez de
+   importar la que ya existe y se exporta desde `lib/closures.ts`) —
+   una sola fuente de verdad para el límite, para que subir el número en
+   un lado no pueda desincronizarse del otro.
+3. `components/ClosureForm.tsx`: validación en el cliente — al elegir la
+   foto (`onChange`), si pesa más que `FOTO_MAX_BYTES` se muestra de
+   inmediato "Esta foto pesa X MB — el máximo es 8 MB..." y se bloquea
+   el submit (botón deshabilitado + `preventDefault`), en vez de dejar
+   que el usuario descubra el problema con un 413 genérico de servidor
+   varios segundos después de subir la foto.
+
+**Por qué la hipótesis de timeout, aunque incorrecta, no fue tiempo
+perdido:** llevó a revisar que `lib/vision.ts` no tiene ningún timeout
+propio ni `maxDuration` configurado en el proyecto — sigue siendo una
+fragilidad real (una llamada de visión inusualmente lenta sí podría
+agotar el límite de función de Vercel), pero no es la que causó este
+bug, así que no se toca en este fix para no mezclar dos cambios sin
+evidencia del segundo.
+
+**Piso de seguridad — estado: sin cambios respecto a la entrada
+anterior** (los 6 puntos siguen ✅; este bug era de disponibilidad —una
+foto válida no se podía subir— no de aislamiento ni de la regla
+owner≠verificador).
+
+**Build limpio confirmado localmente** (`rm -rf .next && npm run
+build`, sin caché, mismas condiciones que un deploy fresco de Vercel) —
+pasa, y el log de build confirma que Next.js reconoce el experimento
+`serverActions`.
+
+**Pendiente de que hagas tú:**
+- Redeploy en Vercel con este commit.
+- Retomar la prueba mecánica de Feature 4 exactamente donde se cortó:
+  cerrar el segundo hallazgo (foto grande) con la cuenta A, confirmar
+  que ahora si sí se guarda (o que el aviso del cliente aparece antes de
+  intentarlo si la foto sigue pasándose del límite), luego que la cuenta
+  B pueda **rechazar** ese cierre con un motivo, y que la cuenta A pueda
+  reenviar. El primer hallazgo (aprobado + inmutabilidad confirmada) ya
+  no hace falta repetirlo.
+
+**Primer movimiento de la próxima sesión:** cerrar Features 4 y 5 en
+firme una vez confirmado el paso de rechazo en producción, y decidir si
+se hace el persona test (Layer 1, `docs/PACKET.md`) para dar por
+terminado el packet.

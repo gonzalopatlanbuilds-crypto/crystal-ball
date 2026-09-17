@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { parseClosureForm, esCierreMismoDia } from "@/lib/closures";
+import { parseClosureForm, esCierreMismoDia, FOTO_MAX_BYTES } from "@/lib/closures";
 import { analizarEvidenciaCierre } from "@/lib/vision";
 import { rutaEvidencia, subirEvidencia } from "@/lib/storage";
 import { etiquetaEscenario } from "@/lib/findings";
@@ -10,7 +10,6 @@ import { etiquetaEscenario } from "@/lib/findings";
 export type ClosureFormState = { error: string } | undefined;
 
 const TIPOS_IMAGEN_PERMITIDOS = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const FOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 interface FindingRow {
   org_id: string;
