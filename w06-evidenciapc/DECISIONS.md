@@ -521,7 +521,54 @@ pasa, y el log de build confirma que Next.js reconoce el experimento
   reenviar. El primer hallazgo (aprobado + inmutabilidad confirmada) ya
   no hace falta repetirlo.
 
-**Primer movimiento de la próxima sesión:** cerrar Features 4 y 5 en
-firme una vez confirmado el paso de rechazo en producción, y decidir si
-se hace el persona test (Layer 1, `docs/PACKET.md`) para dar por
-terminado el packet.
+## 2026-09-17 — Features 4 y 5 confirmadas en producción, packet cerrado en firme
+
+**Confirmado por el usuario, en producción, con el commit `45979ad`
+arriba:**
+- El cierre con la foto grande que antes fallaba con 413 ahora se
+  guarda correctamente (fix de `bodySizeLimit` funcionando de punta a
+  punta: Storage, nota de IA, insert en `closures`, transición a
+  `pending_review`).
+- La cuenta B (verificador, no-owner) aprobó ese cierre — el finding
+  quedó `approved`.
+- Inmutabilidad real verificada de la forma más estricta posible: un
+  intento de editar esa fila directamente en el Table Editor de
+  Supabase (no desde la app, no vía RLS de un cliente autenticado — un
+  `update` manual desde el propio dashboard) fue bloqueado por el
+  trigger `findings_inmutable_tras_aprobacion`. Esto es justo lo que el
+  piso de seguridad pedía: inmutable *a nivel de base de datos*, no solo
+  "sin botón para editar" en la UI.
+
+**Lo que esta ronda confirmó vs. lo que ya estaba confirmado antes:** el
+camino de **aprobar** (owner≠verificador + inmutabilidad) quedó
+verificado dos veces en total en este proyecto — una vez antes de
+encontrar el bug del body limit, y otra vez ahora, ya con el fix, contra
+un segundo hallazgo con una foto más pesada. El camino de **rechazar con
+motivo** (`rechazarCierre`, `lib/reviews.ts` + `rejection_reason`) sigue
+sin una prueba mecánica explícita en esta sesión — el código no cambió
+en el fix de Feature 5, así que el riesgo es bajo, pero queda anotado
+aquí en vez de darlo por hecho sin evidencia.
+
+**Feature 5, cumplida como se pidió originalmente:** prueba mecánica
+real contra el deploy → encontró un bug real (límite de 1 MB de Next.js
+en Server Actions, no cubierto por la validación server-side de 8 MB
+que ya existía) → diagnosticado con logs reales de Vercel, no por
+inspección de código → arreglado → verificado en producción.
+
+**Piso de seguridad — estado final: los 6 puntos ✅**, sin cambios de
+alcance respecto a la Feature 4 (el fix de Feature 5 fue de
+disponibilidad, no de seguridad).
+
+**Pendiente, si se quiere cerrar el 100 % de lo que dice el packet:**
+- (Opcional, riesgo bajo) probar el camino de rechazo con motivo una vez
+  más, ya en este entorno de producción — no es bloqueante para dar por
+  buena la Feature 5.
+- Decidir si se hace el persona test (Layer 1, `docs/PACKET.md`),
+  narrado sobre capturas de pantalla de las dos pantallas del packet
+  (loguear hallazgo, revisión de verificador).
+
+**Primer movimiento de la próxima sesión:** con Features 1-5 cerradas y
+verificadas en producción, el packet técnico está completo. Si el
+usuario quiere seguir, el siguiente paso natural es el persona test de
+`docs/PACKET.md`; si no, el proyecto queda listo para entregarse tal
+cual.
