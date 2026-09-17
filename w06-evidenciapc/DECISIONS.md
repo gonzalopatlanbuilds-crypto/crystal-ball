@@ -636,3 +636,11 @@ estática, consistente con el diagnóstico del Bug 2.
 **Primer movimiento de la próxima sesión:** con estos dos fixes
 verificados en producción, el persona test de Layer 1 queda cerrado y el
 packet completo (Features 1-5 + persona test) listo para entregarse.
+
+**2026-09-17 — Confirmado por el usuario en producción:** ambos fixes
+funcionan — "Aprobado por"/"Rechazado por" ya muestra el nombre/correo
+real del verificador, y "Cerrar sesión" aterriza en `/login` sin pasar
+por una página de "no encontrada".
+
+**Packet cerrado: Features 1-5 + persona test (Layer 1), todo verificado
+en producción, piso de seguridad completo (6/6).**
