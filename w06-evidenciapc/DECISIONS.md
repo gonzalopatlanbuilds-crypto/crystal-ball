@@ -131,3 +131,82 @@ aquí):**
 **Primer movimiento de la próxima sesión:** Feature 3 (envío de evidencia
 de cierre — foto obligatoria — más el flag de cierre-mismo-día y la nota
 asistiva de visión por IA).
+
+## 2026-09-17 — Feature 3: cierre con evidencia + checks de consistencia + visión IA
+
+**Qué cambió:** tabla `closures` (`sql/schema.sql`) con RLS — insert
+exige `closed_by = auth.uid()`, que ese usuario sea el `owner_id` del
+finding referenciado, y que el finding esté `open`/`rejected` (no se
+puede cerrar dos veces algo ya en revisión o aprobado). El `org_id` de la
+fila se valida contra el del finding — eso es lo que hace imposible
+fabricar una fila con un `org_id` distinto para intentar burlar el
+aislamiento de Storage. `findings` gana su primera policy de update: el
+owner puede mandar su propio finding `open`/`rejected` a
+`pending_review`, nada más (USING mira el estado viejo, WITH CHECK el
+nuevo).
+
+**Storage:** bucket privado `closure-evidence` (`insert into
+storage.buckets ... public: false`), con policies de `storage.objects`
+que comparan el primer segmento del path (`storage.foldername`) contra
+el `org_id` del perfil — misma idea de aislamiento que las tablas, pero
+aplicada a los archivos. Las fotos nunca se sirven por URL pública:
+`lib/storage.ts` (`urlFirmadaEvidencia`) genera una URL firmada de 10
+minutos cada vez que se muestra una foto.
+
+**Las tres piezas del Dragon Stack de esta semana, trabajando juntas en
+un solo flujo (`app/(app)/closures/actions.ts`, server action
+`enviarCierre`):** la foto es la evidencia de simulación (ligada al
+`scenario_label` del finding); el flag de mismo-día (`esCierreMismoDia`,
+`lib/closures.ts`) es la lógica ML/adaptativa — determinista por regla
+fija, comparando fechas en la zona horaria de CDMX, no en UTC, para que
+un cierre a las 11pm del mismo día local cuente como mismo día aunque
+cruce la medianoche UTC; y el análisis de visión (`analizarEvidenciaCierre`,
+`lib/vision.ts`, Claude Haiku 4.5 con imagen) es la pieza de IA — una
+sola oración corta, con instrucciones explícitas de nunca usar palabras
+que suenen a veredicto ("aprobado", "correcto", "cumple"), guardada como
+`ai_note` junto a un `ai_label` fijo ("Análisis asistido por IA — apoyo,
+no veredicto"). Si la llamada al modelo falla, `enviarCierre` sigue
+adelante sin nota (`try/catch` alrededor de la única línea que puede
+fallar) — un cierre nunca se bloquea por un problema del modelo de
+visión, solo pierde la nota asistiva.
+
+`/findings/[id]` ahora muestra, condicionalmente, el formulario de
+cierre (`ClosureForm`, solo si eres el owner y el finding está
+`open`/`rejected`) y el historial de cierres con su foto, flag de
+mismo-día y nota de IA — la base visual que la Feature 4 va a convertir
+en pantalla de revisión (mockup 2) agregándole los botones de
+aprobar/rechazar.
+
+**Piso de seguridad — estado tras Feature 3:**
+1. Sin llaves en el repo — ✅ (sin cambios; `ANTHROPIC_API_KEY` ya estaba
+   en `.env.local.example` desde la Feature 1, ahora sí se usa).
+2. Google sign-in para todos — ✅ (sin cambios).
+3. RLS en `closures` y en el bucket de Storage — ✅ (select/insert por
+   `org_id`, mismo patrón que `findings`).
+4. Validación server-side — ✅ foto obligatoria (tipo, tamaño y
+   presencia validados en el server action, no solo el `required` del
+   HTML) y descripción del cierre requerida.
+5. Datos simulados etiquetados en pantalla — ✅ (sin cambios).
+6. Owner nunca puede ser también verificador — ⏳ sigue diferido a
+   Feature 4 (todavía no hay botones de aprobar/rechazar ni el trigger
+   que lo hace imposible a nivel de base).
+
+**Pendiente de que hagas tú (no puedo correr SQL ni crear el bucket en
+tu proyecto desde aquí):**
+- Correr el bloque de Feature 3 de `sql/schema.sql` completo (crea
+  `closures`, la policy de update de `findings`, el bucket
+  `closure-evidence` y sus policies de Storage).
+- Llenar `ANTHROPIC_API_KEY` en `.env.local` si no lo habías hecho.
+- Como owner de un hallazgo, subir una foto cualquiera y confirmar: (a)
+  sin foto el formulario no deja enviar; (b) el finding pasa a "Cierre en
+  revisión"; (c) aparece la nota de IA junto a su etiqueta de "apoyo, no
+  veredicto".
+- Confirmar el flag de mismo-día en ambos sentidos: cerrar un hallazgo
+  recién creado (debe marcar "Cerrado el mismo día") y, si puedes,
+  probar contra un finding con `created_at` de un día anterior (editado a
+  mano en el SQL Editor solo para esta prueba) para confirmar que el
+  flag no se dispara.
+
+**Primer movimiento de la próxima sesión:** Feature 4 (pantalla de
+revisión del verificador — mockup 2 — con el bloqueo owner≠verificador a
+nivel de trigger y la inmutabilidad post-aprobación).

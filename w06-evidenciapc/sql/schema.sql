@@ -203,7 +203,116 @@ create policy "members insert findings in own org"
     )
   );
 
--- Sin policy de update/delete todavía: el estado de un finding solo
--- cambia a través de las server actions de las Features 3 y 4, que traen
--- su propia policy de update más restrictiva (nunca abierta a cualquier
--- campo ni a cualquier estado).
+-- La única transición de estado que le toca a esta feature: el owner
+-- manda su propio finding abierto (o rechazado, para un segundo intento)
+-- a revisión al enviar evidencia de cierre. USING mira la fila vieja
+-- (solo el owner, solo si estaba open/rejected), WITH CHECK mira la fila
+-- nueva (debe quedar en pending_review, sin cambiar de owner). Ninguna
+-- otra transición de estado es válida por esta vía — aprobar/rechazar
+-- trae su propia policy en la Feature 4.
+drop policy if exists "owner sends own finding to review" on public.findings;
+create policy "owner sends own finding to review"
+  on public.findings for update
+  using (owner_id = auth.uid() and status in ('open', 'rejected'))
+  with check (owner_id = auth.uid() and status = 'pending_review');
+
+-- ============================================================
+-- Feature 3: closures — evidencia de cierre (foto obligatoria) que envía
+-- el owner de un finding, más las señales de consistencia: el flag de
+-- mismo-día (regla fija, ver lib/closures.ts) y la nota asistiva de
+-- visión por IA (lib/vision.ts) — ninguna de las dos bloquea ni
+-- autoaprueba nada, son solo información para el verificador de la
+-- Feature 4.
+-- ============================================================
+
+create table if not exists public.closures (
+  id uuid primary key default gen_random_uuid(),
+  finding_id uuid not null references public.findings (id) on delete cascade,
+  -- Denormalizado a propósito: simplifica las policies de RLS de abajo
+  -- (comparar org_id directo en vez de un join contra findings en cada
+  -- policy) y hace la fila autocontenida para el aislamiento por
+  -- Storage (ver bucket más abajo, mismo org_id en el path).
+  org_id uuid not null references public.orgs (id) on delete cascade,
+  closed_by uuid not null references auth.users (id) on delete cascade,
+  photo_path text not null check (char_length(photo_path) > 0),
+  description text not null check (char_length(description) between 1 and 1000),
+  same_day_flag boolean not null,
+  ai_note text,
+  ai_label text default 'Análisis asistido por IA — apoyo, no veredicto',
+  -- null hasta que la Feature 4 lo revise.
+  verifier_id uuid references auth.users (id),
+  decision text check (decision in ('approved', 'rejected')),
+  rejection_reason text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.closures enable row level security;
+
+drop policy if exists "members select own org closures" on public.closures;
+create policy "members select own org closures"
+  on public.closures for select
+  using (
+    org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+  );
+
+-- El insert exige que quien cierra sea el owner del finding referenciado,
+-- que el finding esté realmente abierto/rechazado (no se puede cerrar
+-- dos veces algo que ya está en revisión o ya aprobado), y que el org_id
+-- de la fila coincida con el del finding — este último es lo que hace
+-- imposible fabricar una fila de closure con un org_id distinto al real
+-- para intentar burlar el aislamiento de Storage.
+drop policy if exists "owner inserts closure for own finding" on public.closures;
+create policy "owner inserts closure for own finding"
+  on public.closures for insert
+  with check (
+    closed_by = auth.uid()
+    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and exists (
+      select 1 from public.findings f
+      where f.id = finding_id
+        and f.owner_id = auth.uid()
+        and f.org_id = closures.org_id
+        and f.status in ('open', 'rejected')
+    )
+  );
+
+-- Sin policy de update/delete todavía: la decisión del verificador
+-- (aprobar/rechazar) llega con su propia policy, más estricta, en la
+-- Feature 4 — incluyendo el trigger que hace imposible que el owner
+-- apruebe su propio cierre a nivel de base de datos.
+
+-- ============================================================
+-- Storage: bucket privado para las fotos de evidencia. Nunca público —
+-- se sirven siempre por URL firmada de corta duración (lib/storage.ts),
+-- para que el aislamiento por organización cubra también la evidencia,
+-- no solo las filas de las tablas.
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+values ('closure-evidence', 'closure-evidence', false)
+on conflict (id) do nothing;
+
+-- Convención de path: "<org_id>/<finding_id>/<closure_id>.<ext>" — el
+-- primer segmento del path (storage.foldername) es siempre el org_id de
+-- quien sube, así que comparar ese segmento contra el org_id del perfil
+-- es suficiente para el mismo aislamiento que las tablas.
+drop policy if exists "org members read own org evidence" on storage.objects;
+create policy "org members read own org evidence"
+  on storage.objects for select
+  using (
+    bucket_id = 'closure-evidence'
+    and (storage.foldername(name))[1] = (
+      select p.org_id::text from public.profiles p where p.id = auth.uid()
+    )
+  );
+
+drop policy if exists "org members upload own org evidence" on storage.objects;
+create policy "org members upload own org evidence"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'closure-evidence'
+    and (storage.foldername(name))[1] = (
+      select p.org_id::text from public.profiles p where p.id = auth.uid()
+    )
+  );

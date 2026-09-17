@@ -25,7 +25,7 @@ completo.
 - **Todos los datos son inventados**, etiquetados en pantalla como "Datos
   simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 2 (loguear hallazgo crítico + RLS)
+## Estado actual: Feature 3 (cierre con evidencia + checks de consistencia + visión IA)
 
 ## Desarrollo local
 
