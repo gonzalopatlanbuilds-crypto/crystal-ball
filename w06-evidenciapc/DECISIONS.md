@@ -644,3 +644,31 @@ por una página de "no encontrada".
 
 **Packet cerrado: Features 1-5 + persona test (Layer 1), todo verificado
 en producción, piso de seguridad completo (6/6).**
+
+## 2026-09-17 — Cierre de sesión: proyecto completo, sin código pendiente
+
+**Estado final de `w06-evidenciapc`:**
+1. Feature 1 — auth con Google + organizaciones por código de invitación.
+2. Feature 2 — loguear hallazgo crítico + RLS.
+3. Feature 3 — cierre con evidencia obligatoria + flag de mismo-día +
+   nota asistiva de visión por IA.
+4. Feature 4 — revisión del verificador independiente (owner≠verificador
+   por triplicado: UI, server action, trigger de base de datos) +
+   inmutabilidad real post-aprobación.
+5. Feature 5 — prueba mecánica real contra el deploy, bug encontrado
+   (límite de 1 MB de Next.js en Server Actions) diagnosticado con logs
+   reales y arreglado, verificado en producción.
+
+Más el persona test de Layer 1, que encontró y cerró dos bugs
+adicionales (nombre del verificador ausente en el rastro de auditoría,
+redirect de logout a 404) — también verificados en producción.
+
+Las 5 features y los 6 puntos del piso de seguridad están completos y
+confirmados en producción, no solo en local. **No queda código
+pendiente.** Lo único que falta para entregar el packet es grabar el
+demo video — no requiere ningún cambio más en este repo.
+
+**Primer movimiento de la próxima sesión (si la hay):** ninguno de
+código — solo grabar el demo. Si surge algo durante la grabación
+(un bug nuevo visto en cámara, un ajuste de última hora), esa sería la
+única razón para tocar el repo de nuevo.
