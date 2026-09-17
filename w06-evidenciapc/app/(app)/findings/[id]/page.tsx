@@ -80,15 +80,6 @@ export default async function FindingDetailPage({
     notFound();
   }
 
-  const { data: people } = await supabase
-    .from("profiles")
-    .select("id, display_name, email")
-    .in("id", [finding.reporter_id, finding.owner_id])
-    .returns<ProfileRow[]>();
-
-  const reporter = people?.find((p) => p.id === finding.reporter_id);
-  const owner = people?.find((p) => p.id === finding.owner_id);
-
   const { data: closures } = await supabase
     .from("closures")
     .select(
@@ -97,6 +88,26 @@ export default async function FindingDetailPage({
     .eq("finding_id", finding.id)
     .order("created_at", { ascending: false })
     .returns<ClosureRow[]>();
+
+  // Todos los ids que la pantalla necesita poder nombrar: reporter y
+  // owner del hallazgo, más quien cerró y quien verificó cada cierre.
+  // Antes solo se pedían reporter/owner — "Aprobado por" mostraba un
+  // guion vacío porque el verificador nunca estaba en `people` (persona
+  // test, 2026-09-17).
+  const personIds = new Set<string>([finding.reporter_id, finding.owner_id]);
+  for (const c of closures ?? []) {
+    personIds.add(c.closed_by);
+    if (c.verifier_id) personIds.add(c.verifier_id);
+  }
+
+  const { data: people } = await supabase
+    .from("profiles")
+    .select("id, display_name, email")
+    .in("id", Array.from(personIds))
+    .returns<ProfileRow[]>();
+
+  const reporter = people?.find((p) => p.id === finding.reporter_id);
+  const owner = people?.find((p) => p.id === finding.owner_id);
 
   const closuresConFoto = await Promise.all(
     (closures ?? []).map(async (c) => ({

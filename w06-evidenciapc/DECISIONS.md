@@ -572,3 +572,67 @@ verificadas en producción, el packet técnico está completo. Si el
 usuario quiere seguir, el siguiente paso natural es el persona test de
 `docs/PACKET.md`; si no, el proyecto queda listo para entregarse tal
 cual.
+
+## 2026-09-17 — Persona test (Layer 1): dos bugs reales, ambos arreglados
+
+**Persona:** coordinadora de Protección Civil escéptica de versiones
+digitales, probando el detalle de un hallazgo ya aprobado.
+
+**Bug 1 — "Aprobado por —" (rompe la Condición 3 del Blueprint):** la
+persona señaló que sin saber quién aprobó, el registro no es más
+auditable que el Acta autorreportada que este producto reemplaza —
+exactamente el punto que la Condición 3 (rastro de auditoría con
+responsables visibles) exige. Causa real, confirmada por lectura de
+código: `app/(app)/findings/[id]/page.tsx` solo pedía los perfiles de
+`reporter_id` y `owner_id` a `profiles`; el `verifier_id` de cada
+`closure` nunca se incluía en esa consulta. La línea "Cierre de {...}"
+disimulaba el mismo problema por coincidencia (`closed_by` siempre es el
+owner, que sí estaba en la lista); "Aprobado/Rechazado por" no tuvo esa
+suerte porque el verificador es, por regla, una persona distinta.
+**Fix:** se arma un `Set` con reporter, owner, y `closed_by`/`verifier_id`
+de todos los cierres del hallazgo antes de consultar `profiles` — una
+sola query cubre a todos los que la pantalla necesita nombrar.
+
+**Bug 2 — "Cerrar sesión" manda a una página de "no encontrada":** causa
+real (no cosmética) confirmada con un build limpio: `/login` se sirve
+**estática** en Vercel (`○ /login` en el output de `next build`, antes y
+después del fix). `app/auth/signout/route.ts` hacía
+`NextResponse.redirect(new URL("/login", ...))` sin especificar status,
+así que Next usaba 307 por defecto — un 307 preserva el método original
+de la request, y el botón de cerrar sesión es un `<form method="post">`
+(`components/AppHeader.tsx`). El navegador reintentaba con **POST
+/login**, y como esa ruta no tiene ninguna función sirviendo ese método
+(solo el HTML estático), Vercel respondía 404 — la "página de no
+encontrada" que describiste, no un problema del botón en sí ni de la
+página de login. **Fix:** el redirect ahora pasa `303` explícito (See
+Other), que fuerza GET en el siguiente request sin importar el método
+original — el patrón correcto para POST-redirect-GET.
+
+**Por qué el intento de reproducir localmente no sirvió:** el
+`.env.local` de esta máquina/sesión no tiene llenas
+`NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` (sigue con la
+plantilla de `.env.local.example`), así que `npm run dev` local no puede
+probar el flujo de auth real aquí — el diagnóstico de ambos bugs salió
+de leer el código y el output de `next build`, no de una reproducción
+local. Vale la pena que confirmes ambos fixes directamente en
+producción.
+
+**Piso de seguridad — estado: sin cambios** (ambos bugs eran de
+usabilidad/auditoría de UI, no de RLS ni de la regla owner≠verificador —
+los datos de `verifier_id` siempre estuvieron bien guardados en
+`closures`, solo no se mostraban).
+
+**Build limpio confirmado localmente** (`rm -rf .next && npm run
+build`) — pasa, y el output de rutas sigue mostrando `/login` como
+estática, consistente con el diagnóstico del Bug 2.
+
+**Pendiente de que hagas tú:**
+- Push + redeploy en Vercel.
+- Confirmar en producción: abrir un hallazgo ya aprobado/rechazado y ver
+  el nombre/correo real junto a "Aprobado por" o "Rechazado por".
+- Confirmar en producción: cerrar sesión desde el header y verificar que
+  aterriza en `/login`, no en una página de "no encontrada".
+
+**Primer movimiento de la próxima sesión:** con estos dos fixes
+verificados en producción, el persona test de Layer 1 queda cerrado y el
+packet completo (Features 1-5 + persona test) listo para entregarse.
