@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { etiquetaEscenario, STATUS_LABELS } from "@/lib/findings";
@@ -109,10 +110,23 @@ export default async function FindingDetailPage({
   const cierrePendiente = closuresConFoto.find((c) => c.decision === null);
   const puedeRevisar =
     !esOwner && finding.status === "pending_review" && Boolean(cierrePendiente);
+  // Mismo caso que puedeRevisar, pero para el propio owner: en vez de no
+  // mostrar nada (indistinguible de un bug), se explica la regla
+  // owner≠verificador para que se pueda confirmar a simple vista que sí
+  // está bloqueando, no solo omitiendo la sección.
+  const bloqueadoPorSerOwner =
+    esOwner && finding.status === "pending_review" && Boolean(cierrePendiente);
 
   return (
     <main className="mx-auto max-w-2xl p-6">
-      <div className="flex items-center justify-between">
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center text-sm text-zinc-500 hover:text-zinc-900"
+      >
+        ← Volver al dashboard
+      </Link>
+
+      <div className="mt-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-zinc-900">
           {etiquetaEscenario(finding.scenario_label)}
         </h1>
@@ -160,6 +174,19 @@ export default async function FindingDetailPage({
           aprobarAction={aprobarCierre}
           rechazarAction={rechazarCierre}
         />
+      )}
+
+      {bloqueadoPorSerOwner && (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+          <p className="font-medium">No puedes verificar tu propio cierre</p>
+          <p className="mt-1">
+            Eres el owner de este hallazgo, así que la regla de
+            verificación independiente bloquea que también seas quien
+            apruebe o rechace tu propia evidencia. Pide a otra persona de
+            tu organización que abra este hallazgo desde su cuenta para
+            revisarlo.
+          </p>
+        </div>
       )}
 
       {closuresConFoto.length > 0 && (
