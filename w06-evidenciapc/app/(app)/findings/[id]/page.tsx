@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { etiquetaEscenario, STATUS_LABELS } from "@/lib/findings";
 import { urlFirmadaEvidencia } from "@/lib/storage";
 import ClosureForm from "@/components/ClosureForm";
+import ReviewPanel from "@/components/ReviewPanel";
 import { enviarCierre } from "@/app/(app)/closures/actions";
+import { aprobarCierre, rechazarCierre } from "@/app/(app)/reviews/actions";
 
 interface FindingRow {
   id: string;
@@ -104,6 +106,9 @@ export default async function FindingDetailPage({
 
   const esOwner = user.id === finding.owner_id;
   const puedeCerrar = esOwner && (finding.status === "open" || finding.status === "rejected");
+  const cierrePendiente = closuresConFoto.find((c) => c.decision === null);
+  const puedeRevisar =
+    !esOwner && finding.status === "pending_review" && Boolean(cierrePendiente);
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -147,6 +152,15 @@ export default async function FindingDetailPage({
       </div>
 
       {puedeCerrar && <ClosureForm findingId={finding.id} action={enviarCierre} />}
+
+      {puedeRevisar && cierrePendiente && (
+        <ReviewPanel
+          findingId={finding.id}
+          closureId={cierrePendiente.id}
+          aprobarAction={aprobarCierre}
+          rechazarAction={rechazarCierre}
+        />
+      )}
 
       {closuresConFoto.length > 0 && (
         <div className="mt-6">

@@ -316,3 +316,100 @@ create policy "org members upload own org evidence"
       select p.org_id::text from public.profiles p where p.id = auth.uid()
     )
   );
+
+-- ============================================================
+-- Feature 4: revisión del verificador independiente + inmutabilidad.
+--
+-- La regla central de todo el packet — "quien cierra un hallazgo nunca
+-- puede también verificarlo" — se aplica DOS veces, a propósito:
+--   1. La policy de update de `closures` de abajo ya exige que quien
+--      revisa no sea el owner (vía RLS).
+--   2. El trigger `closures_verificador_no_es_owner` de abajo vuelve a
+--      exigir lo mismo dentro de la propia base de datos, sin depender de
+--      RLS — así, aunque una policy tuviera un error algún día, la regla
+--      sigue siendo imposible de romper. Es la pieza que el piso de
+--      seguridad pide explícitamente "server-side, no solo escondido en
+--      la UI": aquí está server-side dos veces.
+-- ============================================================
+
+drop policy if exists "non-owner reviews pending closure" on public.closures;
+create policy "non-owner reviews pending closure"
+  on public.closures for update
+  using (
+    decision is null
+    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and exists (
+      select 1 from public.findings f
+      where f.id = finding_id and f.owner_id <> auth.uid()
+    )
+  )
+  with check (
+    verifier_id = auth.uid()
+    and decision in ('approved', 'rejected')
+    and reviewed_at is not null
+  );
+
+create or replace function public.closures_verificador_no_es_owner()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_owner_id uuid;
+begin
+  if new.decision is not null then
+    select owner_id into v_owner_id from public.findings where id = new.finding_id;
+    if new.verifier_id is null then
+      raise exception 'Falta el verificador al decidir un cierre.';
+    end if;
+    if new.verifier_id = v_owner_id then
+      raise exception 'El owner del hallazgo no puede verificar su propio cierre.';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists closures_verificador_no_es_owner on public.closures;
+create trigger closures_verificador_no_es_owner
+  before insert or update on public.closures
+  for each row execute function public.closures_verificador_no_es_owner();
+
+-- El verificador (no-owner) puede mover el finding de pending_review a
+-- approved/rejected — misma forma que la policy de update de la Feature 3
+-- (USING mira la fila vieja, WITH CHECK la nueva), pero aquí exige lo
+-- contrario en cuanto a identidad: NO puede ser el owner.
+drop policy if exists "non-owner reviews pending finding" on public.findings;
+create policy "non-owner reviews pending finding"
+  on public.findings for update
+  using (
+    status = 'pending_review'
+    and owner_id <> auth.uid()
+    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+  )
+  with check (
+    status in ('approved', 'rejected')
+    and owner_id <> auth.uid()
+  );
+
+-- Inmutabilidad real: una vez que un finding queda `approved`, este
+-- trigger bloquea CUALQUIER update posterior — no solo los que pasan por
+-- RLS, sino cualquier intento, incluyendo uno con la service role key.
+-- "Inmutable a nivel de base de datos" significa literalmente esto: ni
+-- siquiera el dueño del proyecto de Supabase puede editarlo por accidente
+-- sin primero borrar el trigger.
+create or replace function public.findings_inmutable_tras_aprobacion()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.status = 'approved' then
+    raise exception 'Un hallazgo aprobado es inmutable.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists findings_inmutable_tras_aprobacion on public.findings;
+create trigger findings_inmutable_tras_aprobacion
+  before update on public.findings
+  for each row execute function public.findings_inmutable_tras_aprobacion();

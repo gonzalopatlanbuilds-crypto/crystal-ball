@@ -210,3 +210,82 @@ tu proyecto desde aquí):**
 **Primer movimiento de la próxima sesión:** Feature 4 (pantalla de
 revisión del verificador — mockup 2 — con el bloqueo owner≠verificador a
 nivel de trigger y la inmutabilidad post-aprobación).
+
+## 2026-09-17 — Feature 4: revisión del verificador independiente + inmutabilidad
+
+**Qué cambió:** la regla central del packet — "quien cierra un hallazgo
+nunca puede también verificarlo" — queda aplicada por triplicado, cada
+capa independiente de las otras:
+1. UI: `ReviewPanel` (mockup 2) solo se renderiza en `/findings/[id]`
+   cuando `user.id !== finding.owner_id`.
+2. Server action (`app/(app)/reviews/actions.ts`): `aprobarCierre` y
+   `rechazarCierre` vuelven a comparar `finding.owner_id === user.id`
+   antes de intentar el update, para devolver un mensaje de error
+   legible en vez de que la UI simplemente no ofrezca el botón.
+3. Base de datos (`sql/schema.sql`): la policy de update de `closures`
+   exige `f.owner_id <> auth.uid()` en el `USING`, y el trigger
+   `closures_verificador_no_es_owner` (`before insert or update`) vuelve
+   a exigir lo mismo comparando `new.verifier_id` contra el `owner_id`
+   real del finding — esta última es la que hace la regla imposible de
+   romper "a nivel de base de datos", como pide el piso de seguridad, sin
+   depender de que ninguna policy esté bien escrita.
+
+**Inmutabilidad real, no solo "sin botón de editar":** el trigger
+`findings_inmutable_tras_aprobacion` bloquea *cualquier* `UPDATE` sobre
+una fila con `status = 'approved'`, sin excepción — corre antes que
+cualquier policy de RLS y antes que cualquier client (incluida la
+service role key). Verificado a mano: un `update` directo en el SQL
+Editor de Supabase contra un finding ya aprobado debe fallar con "Un
+hallazgo aprobado es inmutable." (ver "Pendiente de que hagas tú").
+
+**Rechazo:** `rechazarCierre` exige un motivo (`lib/reviews.ts`, zod,
+campo requerido) y deja `findings.status = 'rejected'` — el mismo status
+que ya hacía reaparecer el `ClosureForm` en la pantalla desde la Feature
+3, así que "reabrir con el motivo visible" no necesitó una tabla nueva:
+el motivo vive en `closures.rejection_reason` y ya se mostraba en el
+historial de cierres desde esa feature.
+
+**Auditoría:** `/findings/[id]` ya mostraba quién logueó el hallazgo,
+quién lo cerró, y ahora también quién lo aprobó/rechazó y cuándo
+(`reviewed_at`) — junto con los timestamps de creación de cada cierre.
+Nada de esto necesitó una tabla de auditoría aparte: las columnas de
+`closures` (`verifier_id`, `decision`, `rejection_reason`,
+`reviewed_at`) ya son el rastro completo.
+
+**Piso de seguridad — estado tras Feature 4: los 6 puntos ya están
+completos.**
+1. Sin llaves en el repo — ✅.
+2. Google sign-in para todos — ✅.
+3. RLS en las 4 tablas + Storage — ✅.
+4. Validación server-side en todo formulario — ✅.
+5. Datos simulados etiquetados en pantalla — ✅.
+6. Owner nunca puede ser también verificador — ✅ por triplicado (UI +
+   server action + policy/trigger), y la inmutabilidad post-aprobación
+   es real a nivel de trigger, no solo de UI.
+
+**Pendiente de que hagas tú (no puedo correr SQL en tu proyecto desde
+aquí):**
+- Correr el bloque de Feature 4 de `sql/schema.sql` completo (las dos
+  policies nuevas, los dos triggers y sus funciones).
+- Pase de prueba mecánica del packet, con al menos dos cuentas de Google
+  en la misma organización (coordinador/owner y verificador) y una
+  tercera en otra organización:
+  - Loguear un hallazgo con la cuenta A como owner; con la cuenta A
+    misma, cerrar la evidencia; confirmar que la cuenta A **no** ve el
+    panel de revisión en `/findings/<id>` (owner = tú).
+  - Con la cuenta B (misma org, no es el owner), abrir el mismo
+    `/findings/<id>` y confirmar que sí ve el panel, con la nota de IA y
+    el flag de mismo-día visibles.
+  - Aprobar desde la cuenta B → confirmar que el finding queda
+    "Aprobado" e inmutable: intenta un `update` directo en el SQL Editor
+    de Supabase contra esa fila y confirma que el trigger lo rechaza.
+  - Repetir con un segundo hallazgo, pero rechazando desde la cuenta B
+    con un motivo — confirmar que el finding vuelve a "Rechazado", el
+    motivo aparece en el historial, y la cuenta A puede volver a enviar
+    un cierre.
+  - Con la cuenta C (otra organización), confirmar que no ve nada de lo
+    anterior.
+
+**Primer movimiento de la próxima sesión:** Feature 5 — pase de prueba
+mecánica real contra el deploy, encontrar y arreglar al menos un bug, y
+redeploy.
