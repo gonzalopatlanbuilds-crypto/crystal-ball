@@ -33,16 +33,24 @@ export async function crearOrganizacion(
     redirect("/login");
   }
 
-  const { data, error } = await supabase
-    .rpc("create_org", { p_name: parsed.data.name })
-    .returns<CreateOrgRpcRow[]>();
+  const { data, error } = await supabase.rpc("create_org", { p_name: parsed.data.name });
 
-  if (error || !data?.[0]) {
+  // Sin un tipo `Database` generado en el cliente, encadenar
+  // `.returns<T[]>()` directo sobre `.rpc()` puede chocar con el tipo
+  // guard interno de postgrest-js (asume que el RPC devuelve un solo
+  // objeto, no un array, y produce un error de compilación al intentar
+  // castear a array) — versión-dependiente, no reproducía en todas
+  // partes. Se evita del todo castenado manualmente después de resolver
+  // la promesa, que es donde `create_org()` (una función `returns table`
+  // en sql/schema.sql) sí llega como arreglo en tiempo de ejecución.
+  const rows = data as unknown as CreateOrgRpcRow[] | null;
+
+  if (error || !rows?.[0]) {
     console.error("crearOrganizacion: create_org falló", error);
     return { error: "No se pudo crear la organización. Intenta de nuevo." };
   }
 
-  return { joinCode: data[0].join_code, orgName: parsed.data.name };
+  return { joinCode: rows[0].join_code, orgName: parsed.data.name };
 }
 
 export async function unirseOrganizacion(

@@ -25,7 +25,7 @@ completo.
 - **Todos los datos son inventados**, etiquetados en pantalla como "Datos
   simulados" — nunca nombres o datos personales reales.
 
-## Estado actual: Feature 4 (revisión del verificador independiente + inmutabilidad)
+## Estado actual: Feature 5 (bug del primer deploy en Vercel arreglado)
 
 ## Desarrollo local
 

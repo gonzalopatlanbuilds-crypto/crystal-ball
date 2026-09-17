@@ -289,3 +289,60 @@ aquí):**
 **Primer movimiento de la próxima sesión:** Feature 5 — pase de prueba
 mecánica real contra el deploy, encontrar y arreglar al menos un bug, y
 redeploy.
+
+## 2026-09-17 — Feature 5: bug del primer deploy en Vercel (type-check)
+
+**Bug encontrado:** el primer deploy en Vercel falló en `npm run build`
+con un error de TypeScript en `app/onboarding/actions.ts`, en la llamada
+a `create_org`:
+
+```
+error TS7053: Element implicitly has an 'any' type because expression
+of type '0' can't be used to index type '{ Error: "Type mismatch:
+Cannot cast single object to array type..." } | CreateOrgRpcRow[]'.
+```
+
+La causa: `.rpc("create_org", { p_name })` estaba encadenado
+directamente con `.returns<CreateOrgRpcRow[]>()`. Sin un tipo `Database`
+generado apuntando al cliente de Supabase (no lo tenemos — no corrimos
+`supabase gen types`), el generic interno de `@supabase/postgrest-js`
+para `.rpc()` no sabe de antemano que `create_org()` es una función
+`returns table (...)` (que PostgREST sí trata como conjunto/array en
+runtime) — y bajo ciertas versiones resueltas de la librería, encadenar
+`.returns<T[]>()` justo ahí dispara un type-guard interno que literalmente
+compila a un tipo de error como mensaje, pensado para avisar en tiempo de
+compilación de un cast inválido de objeto-a-array. En local no reprodujo
+(el build pasó varias veces seguidas durante las Features 1-4), pero en
+Vercel — instalación limpia, sin caché incremental de TypeScript — sí.
+No fue una falla real de datos ni de RLS, solo un choque de inferencia de
+tipos entre versiones/entornos.
+
+**Fix:** se quitó el `.returns<CreateOrgRpcRow[]>()` encadenado. Ahora se
+espera la respuesta del `.rpc()` sin anotar su tipo, y se castea el
+`data` ya resuelto con `data as unknown as CreateOrgRpcRow[] | null` —
+evita por completo ese overload frágil de postgrest-js, sin cambiar el
+comportamiento en runtime (`create_org()` sigue devolviendo un arreglo de
+una fila, como siempre). Verificado con un build limpio local (`rm -rf
+.next && npm run build`, sin caché incremental, para reproducir las
+condiciones de una instalación fresca como la de Vercel) — pasa.
+
+**Piso de seguridad — estado tras Feature 5:** sin cambios respecto a la
+Feature 4 (los 6 puntos siguen ✅).
+
+**Pendiente de que hagas tú:**
+- Redeploy en Vercel (el build ahora debería pasar; si Vercel no
+  redetecta el push automáticamente, dispara un redeploy manual desde su
+  dashboard).
+- Una vez arriba, correr el pase de prueba mecánica completo de la
+  Feature 4 (los 5 pasos con cuentas A/B/C) ya contra la URL de
+  producción, no solo en local.
+- Confirmar login con Google en la URL de producción — si no agregaste
+  todavía `https://<tu-app>.vercel.app/auth/callback` a Redirect URLs en
+  Supabase, el login fallará en producción aunque haya funcionado en
+  local.
+
+**Primer movimiento de la próxima sesión (o de cierre del proyecto):**
+una vez el deploy esté arriba y verificado con el pase de prueba
+mecánica, el packet ya está completo — quedaría, si el usuario quiere,
+el "persona test" (Layer 1) narrado sobre capturas de pantalla de ambas
+pantallas, descrito en `docs/PACKET.md`.
