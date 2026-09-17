@@ -12,11 +12,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("org_id, orgs(name)")
     .eq("id", user.id)
     .maybeSingle<{ org_id: string; orgs: { name: string } | null }>();
+
+  if (error) {
+    console.error("AppLayout: no se pudo leer el perfil", error);
+  }
 
   if (!profile) {
     redirect("/onboarding");

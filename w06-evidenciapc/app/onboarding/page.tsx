@@ -12,11 +12,15 @@ export default async function OnboardingPage() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("id")
     .eq("id", user.id)
     .maybeSingle();
+
+  if (error) {
+    console.error("OnboardingPage: no se pudo leer el perfil", error);
+  }
 
   if (profile) {
     redirect("/dashboard");

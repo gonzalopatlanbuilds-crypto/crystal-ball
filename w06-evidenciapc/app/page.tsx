@@ -16,11 +16,20 @@ export default async function Home() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("id")
     .eq("id", user.id)
     .maybeSingle();
+
+  // Sin este log, un error real de RLS (ej. la política de "profiles" que
+  // antes se referenciaba a sí misma — ver sql/schema.sql) llega aquí
+  // como `data: null` indistinguible de "todavía no tiene perfil", y el
+  // síntoma visible es un loop silencioso de vuelta a /onboarding aunque
+  // el perfil sí exista.
+  if (error) {
+    console.error("Home: no se pudo leer el perfil", error);
+  }
 
   if (!profile) {
     redirect("/onboarding");

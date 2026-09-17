@@ -33,6 +33,32 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+-- "¿Cuál es mi org_id?" se necesita dentro de CASI todas las policies de
+-- este archivo — se resuelve una sola vez aquí, no repitiendo el
+-- subquery en cada policy. Es más que estilo: una policy de SELECT sobre
+-- `profiles` que dentro de su propio USING vuelve a hacer
+-- "select ... from profiles where id = auth.uid()" es una referencia
+-- circular de la tabla a sí misma, y Postgres la rechaza en tiempo de
+-- ejecución con "infinite recursion detected in policy for relation
+-- profiles" — la fila nunca llega, y el cliente ve `data: null` con el
+-- error ignorado si no se revisa `error` explícitamente (justo lo que
+-- pasó: /onboarding creaba el perfil bien, pero "/" nunca lograba leerlo
+-- de vuelta y mandaba siempre a /onboarding otra vez). SECURITY DEFINER
+-- rompe el ciclo: esta función corre bypasseando RLS internamente, así
+-- que la policy que la llama nunca vuelve a disparar su propia policy.
+create or replace function public.my_org_id()
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select org_id from public.profiles where id = auth.uid();
+$$;
+
+revoke all on function public.my_org_id() from public;
+grant execute on function public.my_org_id() to authenticated;
+
 -- select: cualquier miembro ve los perfiles de su propia org — hace falta
 -- para elegir "owner" al capturar un hallazgo (Feature 2) y para saber
 -- quién más puede revisar una evidencia (Feature 4).
@@ -40,7 +66,7 @@ drop policy if exists "members select own org profiles" on public.profiles;
 create policy "members select own org profiles"
   on public.profiles for select
   using (
-    org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    org_id = public.my_org_id()
   );
 
 -- orgs: visible solo a quien ya es miembro (para mostrar el nombre de tu
@@ -51,7 +77,7 @@ drop policy if exists "members select own org" on public.orgs;
 create policy "members select own org"
   on public.orgs for select
   using (
-    id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    id = public.my_org_id()
   );
 
 -- A propósito, ninguna policy de insert/update/delete en orgs/profiles:
@@ -183,7 +209,7 @@ drop policy if exists "members select own org findings" on public.findings;
 create policy "members select own org findings"
   on public.findings for select
   using (
-    org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    org_id = public.my_org_id()
   );
 
 -- El insert exige, en el mismo WHERE, que quien loguea el hallazgo sea el
@@ -196,7 +222,7 @@ create policy "members insert findings in own org"
   on public.findings for insert
   with check (
     reporter_id = auth.uid()
-    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and org_id = public.my_org_id()
     and exists (
       select 1 from public.profiles po
       where po.id = owner_id and po.org_id = findings.org_id
@@ -253,7 +279,7 @@ drop policy if exists "members select own org closures" on public.closures;
 create policy "members select own org closures"
   on public.closures for select
   using (
-    org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    org_id = public.my_org_id()
   );
 
 -- El insert exige que quien cierra sea el owner del finding referenciado,
@@ -267,7 +293,7 @@ create policy "owner inserts closure for own finding"
   on public.closures for insert
   with check (
     closed_by = auth.uid()
-    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and org_id = public.my_org_id()
     and exists (
       select 1 from public.findings f
       where f.id = finding_id
@@ -302,9 +328,7 @@ create policy "org members read own org evidence"
   on storage.objects for select
   using (
     bucket_id = 'closure-evidence'
-    and (storage.foldername(name))[1] = (
-      select p.org_id::text from public.profiles p where p.id = auth.uid()
-    )
+    and (storage.foldername(name))[1] = public.my_org_id()::text
   );
 
 drop policy if exists "org members upload own org evidence" on storage.objects;
@@ -312,9 +336,7 @@ create policy "org members upload own org evidence"
   on storage.objects for insert
   with check (
     bucket_id = 'closure-evidence'
-    and (storage.foldername(name))[1] = (
-      select p.org_id::text from public.profiles p where p.id = auth.uid()
-    )
+    and (storage.foldername(name))[1] = public.my_org_id()::text
   );
 
 -- ============================================================
@@ -337,7 +359,7 @@ create policy "non-owner reviews pending closure"
   on public.closures for update
   using (
     decision is null
-    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and org_id = public.my_org_id()
     and exists (
       select 1 from public.findings f
       where f.id = finding_id and f.owner_id <> auth.uid()
@@ -384,7 +406,7 @@ create policy "non-owner reviews pending finding"
   using (
     status = 'pending_review'
     and owner_id <> auth.uid()
-    and org_id = (select p.org_id from public.profiles p where p.id = auth.uid())
+    and org_id = public.my_org_id()
   )
   with check (
     status in ('approved', 'rejected')

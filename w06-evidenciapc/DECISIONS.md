@@ -346,3 +346,62 @@ una vez el deploy esté arriba y verificado con el pase de prueba
 mecánica, el packet ya está completo — quedaría, si el usuario quiere,
 el "persona test" (Layer 1) narrado sobre capturas de pantalla de ambas
 pantallas, descrito en `docs/PACKET.md`.
+
+## 2026-09-17 — Bug post-deploy: "/" no reconocía el perfil recién creado
+
+**Reporte del usuario:** creó una organización ("Colegio Húngaro") desde
+`/onboarding`, pero al navegar a `/` (sin pasar por `/onboarding`) el
+sistema lo seguía mandando de vuelta a `/onboarding`, como si no
+reconociera que su cuenta ya tenía un `profile` con `org_id`.
+
+**Causa real:** la policy de SELECT de `profiles` (`sql/schema.sql`,
+Feature 1) se refería a sí misma dentro de su propio `USING`:
+
+```sql
+using (org_id = (select p.org_id from public.profiles p where p.id = auth.uid()))
+```
+
+Una policy de una tabla que, para decidir si una fila es visible, vuelve
+a consultar esa misma tabla es una referencia circular clásica de
+Postgres — falla en tiempo de ejecución con "infinite recursion detected
+in policy for relation profiles". El resultado nunca llega como una
+fila; llega como un `error` en la respuesta de supabase-js. El problema
+real es que `app/page.tsx`, `app/onboarding/page.tsx` y
+`app/(app)/layout.tsx` solo desestructuraban `data`, nunca `error` — así
+que un error de RLS y "todavía no tienes perfil" se veían exactamente
+igual desde el código: `data: null`. De ahí el síntoma exacto que
+describiste: el perfil sí existía (`create_org` lo había insertado bien,
+esa función es `security definer` y no pasa por esta policy), pero
+ninguna pantalla lograba volver a leerlo.
+
+**Fix — dos partes:**
+1. `sql/schema.sql`: nueva función `public.my_org_id()` (`security
+   definer`, `stable`) que resuelve "¿cuál es mi org_id?" bypasseando
+   RLS internamente, y **todas** las policies del archivo (profiles,
+   orgs, findings ×3, closures ×3, storage.objects ×2) ahora la llaman
+   en vez de repetir el subquery — no solo se arregló la única
+   verdaderamente circular (`profiles`), sino que se centralizó el
+   patrón en las demás para que no vuelva a pasar por copy-paste.
+2. `app/page.tsx`, `app/onboarding/page.tsx`, `app/(app)/layout.tsx`:
+   ahora desestructuran también `error` del fetch de `profiles` y lo
+   loguean — un futuro error de este tipo va a aparecer en los logs de
+   Vercel/Supabase en vez de manifestarse solo como un loop de redirect
+   silencioso y confuso.
+
+**Piso de seguridad — estado: sin cambios respecto a la Feature 5** (los
+6 puntos siguen ✅; este bug era de disponibilidad/UX — un perfil real
+quedaba invisible para su propio dueño — no una brecha de aislamiento
+entre organizaciones).
+
+**Pendiente de que hagas tú — este fix SÍ necesita que vuelvas a correr
+SQL, a diferencia del fix anterior:**
+- Vuelve a correr `sql/schema.sql` completo en el SQL Editor de Supabase
+  (es idempotente — todos los `create or replace function` y `drop
+  policy if exists` / `create policy` son seguros de repetir). Esto
+  reemplaza la policy circular de `profiles` por la que usa
+  `my_org_id()`.
+- Después de correrlo, entra a `/` (o a `/dashboard` directo) con la
+  cuenta que ya creó "Colegio Húngaro" y confirma que ya no rebota a
+  `/onboarding`.
+- Push del código ya hecho — falta el redeploy en Vercel (automático si
+  detecta el push; si no, dispáralo a mano).
