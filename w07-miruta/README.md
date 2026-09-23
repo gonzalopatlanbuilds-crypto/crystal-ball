@@ -24,7 +24,7 @@ completo.
   debe cargar sin sesión de Vercel. Confirmar esto antes de dar por
   terminada cada entrega (falla real de la semana pasada).
 
-## Estado actual: Feature 4 (revisión driver-first del lenguaje)
+## Estado actual: Features 1-5 completas (ver `DECISIONS.md`)
 
 ## Desarrollo local
 

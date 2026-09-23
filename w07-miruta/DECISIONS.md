@@ -302,6 +302,24 @@ de Vercel más reciente sirve este cambio.
 `/login` responde 200 sin muro de Vercel SSO (Deployment Protection
 apagado, confirmado también server-side); `/dashboard`, `/trips` y
 `/report` redirigen 307 a `/login` sin sesión — `proxy.ts` activo en
-producción. No se pudo confirmar desde afuera que el build corresponde
-exactamente al commit `4375473` (eso requiere el dashboard de Vercel o
-una sesión real) — pendiente de una última pasada visual del usuario.
+producción.
+
+**Confirmado por el usuario en producción:** un viaje nuevo de 55 min /
+28 km/h sale Verificado con el fix desplegado; el viaje de 7 min sigue
+Marcado. El registro viejo (logueado con la tolerancia de 0.35, antes
+del fix) se quedó Marcado — esperado, `status`/`flag_reason` se calculan
+una sola vez al insertar (`evaluarViaje` en el server action) y `trips`
+no tiene policy de update, así que ningún viaje ya guardado se recalcula
+retroactivamente cuando cambia la lógica. Si se quisiera "corregir" ese
+registro viejo, la única vía sería borrarlo y volver a loguearlo — no
+hay un mecanismo de recálculo en este packet, y no hace falta uno para
+el estado actual (semana 7).
+
+## Estado del proyecto: Features 1-5 completas
+
+Auth + shell (F1), registro de viaje + chequeo de plausibilidad (F2),
+reporte de ingresos verificado (F3), revisión driver-first del lenguaje
+(F4), y pase mecánico + persona test con un bug real encontrado y
+arreglado (F5) — todo desplegado en Vercel con Deployment Protection
+apagado y verificado tanto desde afuera (curl) como por el usuario en
+producción. Sin trabajo de código pendiente para esta semana.
