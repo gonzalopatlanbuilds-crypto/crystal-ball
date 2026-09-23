@@ -22,7 +22,19 @@ export const STATUS_LABELS: Record<string, string> = {
 // viaje, antes de tratarse como una segunda señal de alerta independiente
 // del chequeo de duración/geometría — así la telemetría de verdad influye
 // en la decisión en vez de ser un campo capturado y nunca usado.
-const TELEMETRY_SPEED_TOLERANCE = 0.35;
+//
+// 0.55, no 0.35: con 0.35, cualquier telemetría dentro del rango GENERAL
+// de la ruta (20-28 km/h) podía marcarse solo por caer en el extremo
+// opuesto de la duración reportada — el peor caso matemático es
+// duración=55min con telemetría=28km/h (computedAvgSpeedKmh≈20.18,
+// delta≈38.7%), y el persona test (Feature 5) lo confirmó con datos
+// reales: 2 de 3 viajes de prueba se marcaron, incluyendo uno con
+// velocidad "limpia" dentro del rango esperado. Eso rompe la promesa de
+// "este reporte es tuyo" desde el primer uso. 0.55 dejan ~16 puntos de
+// margen sobre ese peor caso (así que variación normal dentro del rango
+// de la ruta nunca dispara el flag) y sigue marcando telemetría
+// claramente implausible (ej. 5 km/h en un viaje de 47 min, delta≈79%).
+const TELEMETRY_SPEED_TOLERANCE = 0.55;
 
 export const tripInputSchema = z
   .object({

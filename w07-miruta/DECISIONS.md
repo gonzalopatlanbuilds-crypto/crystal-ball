@@ -264,3 +264,36 @@ completo documentado (bug de OAuth y el hallazgo de telemetría ya
 cuentan como bugs encontrados/arreglados de esta semana), persona test
 Layer 1 con las capturas de `/trips` y `/report`, y confirmar que el
 deploy de Vercel refleja el estado final tras cualquier fix.
+
+## 2026-09-23 — Feature 5: persona test Layer 1 — tolerancia de telemetría demasiado estricta
+
+**Qué pasó:** el usuario corrió el persona test Layer 1 (chofer
+escéptico) contra las tres pantallas con datos reales, no hipotéticos.
+Peor hallazgo: `TELEMETRY_SPEED_TOLERANCE` en 0.35 (el valor de la nota
+de la Feature 3) marcó 2 de 3 viajes de prueba, incluyendo uno con
+velocidad de telemetría completamente dentro del rango esperado de la
+ruta (28 km/h, rango 20-28). La nota explicativa que se agregó en
+`TripForm` (Feature 3) explicaba POR QUÉ pasaba esto, pero no arreglaba
+que fuera a pasar con demasiada frecuencia — con datos de prueba
+"limpios" ya se disparaba en la mayoría de los casos, así que un
+conductor real con variación normal de tráfico vería la mayoría de sus
+viajes marcados desde el primer uso, exactamente lo opuesto de la
+promesa del reporte ("este reporte es tuyo").
+
+**Fix:** `TELEMETRY_SPEED_TOLERANCE` sube de 0.35 a 0.55 en
+`lib/trips.ts`. El peor caso matemático posible (duración=55min,
+telemetría=28km/h) da un delta de ~38.7% — 0.55 deja ~16 puntos de
+margen sobre eso, así que ninguna telemetría dentro del rango general de
+la ruta puede disparar el flag sin importar qué duración se reporte,
+mientras sigue marcando telemetría claramente implausible (ej. 5 km/h en
+un viaje de 47 min, delta≈79%). El chequeo de duración/geometría
+(`evaluarViaje`, sección 1) no cambió — sigue siendo el que atrapa el
+caso de 7 minutos del mockup.
+
+**Piso de seguridad:** sin cambios — ajuste de una sola constante,
+misma lógica de `evaluarViaje` siempre server-side.
+
+**Pendiente de que pruebes tú:** re-correr el persona test contra este
+fix (o al menos volver a loguear los mismos 3 viajes de prueba) para
+confirmar que ya no se marcan por telemetría, y confirmar que el deploy
+de Vercel más reciente sirve este cambio.
