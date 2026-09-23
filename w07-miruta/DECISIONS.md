@@ -197,3 +197,29 @@ lenguaje de `/trips` y `/report` contra la Condición 1 del Blueprint
 (nunca debe leerse como vigilancia con etiqueta amigable), más una
 explicación explícita del beneficio para el conductor en la pantalla de
 registro.
+
+## 2026-09-23 — Feature 3, hallazgo del pase mecánico: telemetría marcada por sorpresa
+
+**Qué pasó:** probando el pase mecánico, un viaje de 55 min con
+telemetría de 28 km/h se marcó — pero 28 está dentro del rango general
+de la ruta (20-28 km/h), así que a primera vista parecía un bug.
+
+**No era un bug de cálculo:** `evaluarViaje` compara la telemetría
+contra la velocidad que implica LA DURACIÓN de ESE viaje específico
+(`distance_km / duración`), no contra el rango general de la ruta —
+55 min a 18.5 km implica ~20.2 km/h, y 28 está 38.6% por encima de eso
+(tolerancia: 35%). Es matemáticamente correcto y es justo el cruce de
+señales que pide el Dragon Stack ("telemetría... como señal secundaria
+junto al GPS"): a 28 km/h reales por 55 min se recorrerían ~25.7 km, no
+18.5 — las dos señales sí son físicamente inconsistentes entre sí,
+aunque cada una por separado caiga dentro de "lo plausible para la
+ruta en general".
+
+**Lo que sí estaba mal:** nada en la pantalla explicaba esa distinción,
+así que un conductor de prueba razonablemente asume que "cualquier
+número dentro del rango de la ruta" debería pasar. Se agregó una nota
+bajo el campo de velocidad de telemetría en `TripForm` explicándolo con
+el mismo ejemplo numérico. La lógica de `evaluarViaje` no cambió — se
+decidió con el usuario mantener el cross-check real en vez de
+simplificarlo al rango general (que sería más predecible pero dejaría
+de cruzar las dos señales de verdad entre sí) o subirle la tolerancia.

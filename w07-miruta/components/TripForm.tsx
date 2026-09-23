@@ -67,6 +67,13 @@ export default function TripForm({ action }: Props) {
             required
             className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
           />
+          <p className="mt-1 text-xs text-zinc-400">
+            Debe ser consistente con la duración que reportas arriba, no
+            solo con el rango general de la ruta — un viaje de 55 min a
+            18.5 km implica ~20 km/h; una telemetría muy distinta a eso
+            se marca, aunque esa velocidad sí sea válida para otro tramo
+            del mismo viaje.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-zinc-700" htmlFor="telemetry_label">
