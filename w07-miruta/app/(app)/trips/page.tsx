@@ -41,6 +41,14 @@ export default async function TripsPage() {
         Datos simulados — GPS y telemetría de prueba, ningún viaje aquí es
         real.
       </p>
+      <p className="mt-3 text-sm text-zinc-600">
+        Cada viaje que registras aquí se suma a tu propio historial de
+        ingresos — el mismo que después vas a poder usar para un
+        crédito, una renta o un trámite de arrendamiento. Solo tú ves
+        esta pantalla: no hay un dueño de ruta ni un supervisor mirando
+        tus viajes, y nada de esto sale de tu cuenta salvo el reporte que
+        tú decidas generar y compartir.
+      </p>
 
       <div className="mt-6">
         <TripForm action={registrarViaje} />

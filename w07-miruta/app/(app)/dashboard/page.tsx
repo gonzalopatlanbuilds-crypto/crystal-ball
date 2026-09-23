@@ -57,10 +57,10 @@ export default async function DashboardPage() {
             </div>
           </dl>
           <p className="mt-4 text-xs text-zinc-400">
-            Un viaje que se aleje mucho de este rango se marcará para
-            revisión en vez de contarse automáticamente — así el reporte de
-            ingresos que construyas sobre tus viajes es algo que puedas
-            respaldar tú mismo.
+            Un viaje que se aleje mucho de este rango se excluye
+            automáticamente de tu reporte, sin que nadie más lo revise —
+            así el reporte de ingresos que construyas sobre tus viajes es
+            algo que puedas respaldar tú mismo.
           </p>
         </div>
       )}

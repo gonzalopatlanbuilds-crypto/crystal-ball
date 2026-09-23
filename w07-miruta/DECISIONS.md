@@ -223,3 +223,44 @@ el mismo ejemplo numérico. La lógica de `evaluarViaje` no cambió — se
 decidió con el usuario mantener el cross-check real en vez de
 simplificarlo al rango general (que sería más predecible pero dejaría
 de cruzar las dos señales de verdad entre sí) o subirle la tolerancia.
+
+## 2026-09-23 — Vercel desplegado
+
+Deployment Protection confirmado apagado por el usuario en incógnito
+sin sesión de Vercel activa. Piso de seguridad punto 6 (item 6 de la
+Feature 1) — ✅ completo. No se registró la URL de producción aquí (no
+es información persistente del proyecto en sí, vive en el dashboard de
+Vercel/GitHub).
+
+## 2026-09-23 — Feature 4: revisión driver-first del lenguaje
+
+**Qué cambió:** revisión de `/dashboard`, `/trips` y `/report` contra la
+Condición 1 del Blueprint ("el sistema no puede pedirle datos al
+conductor solo para que alguien más los vea"). Dos cambios de copy, cero
+cambios de lógica:
+
+1. **`/trips` no explicaba el beneficio antes de pedir los datos** — el
+   conductor llegaba a un formulario pidiendo hora de inicio/fin y
+   telemetría sin que la pantalla dijera para qué. Se agregó un párrafo
+   arriba del formulario: qué construye cada viaje registrado (su propio
+   historial de ingresos), para qué sirve después (crédito, renta,
+   arrendamiento), y quién más lo ve (nadie — sin dueño de ruta ni
+   supervisor mirando la pantalla).
+2. **`/dashboard` decía "se marcará para revisión"** — un viaje
+   implausible no pasa por ninguna revisión humana en este sistema (todo
+   el chequeo es automático, `evaluarViaje`), así que esa frase sugería
+   falsamente un supervisor mirando cada viaje marcado. Se corrigió a
+   "se excluye automáticamente... sin que nadie más lo revise" — más
+   preciso Y más alineado con Condición 1 en el mismo cambio.
+
+`/report` y `/login` ya framaban bien (reporte explícitamente "tuyo",
+método de verificación visible, sin lenguaje de vigilancia) — no se
+tocaron.
+
+**Piso de seguridad:** sin cambios — Feature 4 es puramente de copy.
+
+**Siguiente movimiento (próxima sesión):** Feature 5 — pase mecánico
+completo documentado (bug de OAuth y el hallazgo de telemetría ya
+cuentan como bugs encontrados/arreglados de esta semana), persona test
+Layer 1 con las capturas de `/trips` y `/report`, y confirmar que el
+deploy de Vercel refleja el estado final tras cualquier fix.
