@@ -51,3 +51,42 @@ values (
   20, 28
 )
 on conflict (name) do nothing;
+
+-- ============================================================
+-- Feature 2: trips — viaje logueado por el conductor (hora de inicio/fin
+-- simulando el ping de GPS, más un resumen de telemetría simulada del
+-- teléfono). El status y flag_reason SIEMPRE se calculan en el servidor
+-- (lib/trips.ts, evaluarViaje) antes del insert — nunca se confía en un
+-- status que mande el cliente, mismo principio que screenings en
+-- w05-timing-caf.
+-- ============================================================
+
+create table if not exists public.trips (
+  id uuid primary key default gen_random_uuid(),
+  driver_id uuid not null references auth.users (id) on delete cascade,
+  route_id uuid not null references public.routes (id) on delete restrict,
+  start_time timestamptz not null,
+  end_time timestamptz not null check (end_time > start_time),
+  telemetry_avg_speed_kmh numeric not null check (telemetry_avg_speed_kmh > 0),
+  telemetry_label text not null check (telemetry_label in ('consistent', 'inconsistent')),
+  status text not null check (status in ('verified', 'flagged')),
+  flag_reason text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.trips enable row level security;
+
+-- Un viaje ya registrado no se edita ni se borra — es un registro que el
+-- conductor está construyendo como su propio historial, no un borrador.
+-- Por eso solo hay policies de select e insert, nunca de update/delete
+-- (mismo patrón que screenings en w05-timing-caf).
+
+drop policy if exists "drivers select own trips" on public.trips;
+create policy "drivers select own trips"
+  on public.trips for select
+  using (auth.uid() = driver_id);
+
+drop policy if exists "drivers insert own trips" on public.trips;
+create policy "drivers insert own trips"
+  on public.trips for insert
+  with check (auth.uid() = driver_id);

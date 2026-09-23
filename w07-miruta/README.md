@@ -14,7 +14,8 @@ completo.
   Environment Variables del dashboard de Vercel en producción.
 - **Supabase Auth con Google** para cuentas de conductor.
 - **Row Level Security** en `trips` (desde la Feature 2): cada conductor
-  solo ve y reporta sobre sus propios viajes.
+  solo ve y reporta sobre sus propios viajes (`auth.uid() = driver_id`,
+  sin policy de update/delete — el registro es inmutable).
 - **Validación server-side en todo formulario** — hora de inicio/fin de
   viaje requeridas y validadas como rango real antes de calificar nada.
 - **Todos los datos son inventados**, etiquetados en pantalla como "Datos
@@ -23,7 +24,7 @@ completo.
   debe cargar sin sesión de Vercel. Confirmar esto antes de dar por
   terminada cada entrega (falla real de la semana pasada).
 
-## Estado actual: Feature 1 (auth + shell + ruta sembrada)
+## Estado actual: Feature 2 (registro de viaje + chequeo de plausibilidad)
 
 ## Desarrollo local
 

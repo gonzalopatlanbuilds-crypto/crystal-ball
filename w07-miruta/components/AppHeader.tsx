@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 interface Props {
   email?: string | null;
 }
@@ -6,7 +8,17 @@ export default function AppHeader({ email }: Props) {
   return (
     <header className="bg-zinc-900 text-white print:hidden">
       <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-        <span className="text-lg font-semibold">MiRuta</span>
+        <div className="flex items-center gap-6">
+          <span className="text-lg font-semibold">MiRuta</span>
+          <nav className="flex gap-4 text-sm text-zinc-300">
+            <Link href="/dashboard" className="hover:text-white">
+              Ruta
+            </Link>
+            <Link href="/trips" className="hover:text-white">
+              Mis viajes
+            </Link>
+          </nav>
+        </div>
         {email && (
           <div className="flex items-center gap-3 text-sm text-zinc-300">
             <span>{email}</span>

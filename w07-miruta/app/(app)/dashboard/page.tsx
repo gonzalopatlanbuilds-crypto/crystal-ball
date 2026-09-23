@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import type { Route } from "@/lib/routes";
 
@@ -64,10 +65,12 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <p className="mt-6 text-sm text-zinc-400">
-        El registro de viajes y el reporte de ingresos llegan en la
-        siguiente entrega.
-      </p>
+      <Link
+        href="/trips"
+        className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+      >
+        Registrar un viaje
+      </Link>
     </main>
   );
 }

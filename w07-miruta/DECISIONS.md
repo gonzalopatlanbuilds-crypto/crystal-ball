@@ -65,3 +65,52 @@ cliente OAuth de Google, ni el proyecto de Vercel desde aquí):**
 registro de viaje (mockup 1) + `trips` table + chequeo de plausibilidad
 (duración/velocidad reales vs. rango de `routes`, combinado con la señal
 de telemetría simulada) que marca cada viaje verificado o flagged.
+
+## 2026-09-23 — Feature 2: registro de viaje + chequeo de plausibilidad
+
+**Qué cambió:** `sql/schema.sql` agrega `trips` (`driver_id`, `route_id`,
+`start_time`/`end_time`, telemetría simulada, `status`/`flag_reason`) con
+RLS `auth.uid() = driver_id` y sin policy de update/delete (registro
+inmutable, mismo patrón que `screenings` en w05-timing-caf). `/trips`
+(mockup 1) combina el formulario de registro con la lista de viajes del
+conductor y el resumen "N verificados · M marcados".
+
+`lib/trips.ts` (`evaluarViaje`) es la única fuente de verdad del status —
+se calcula siempre en el server action (`app/(app)/trips/actions.ts`)
+antes del insert, nunca confiado del cliente. Combina las dos señales del
+Dragon Stack en una sola decisión, no como features separadas:
+1. **Geodata:** duración real vs. rango esperado de la ruta sembrada.
+   Duración y velocidad promedio son la misma variable vista desde dos
+   ángulos (la distancia de la ruta es fija), así que no se checan como
+   dos condiciones independientes — solo duración.
+2. **Telemetría:** la etiqueta sintética ("consistente"/"inconsistente")
+   marcada en el formulario, y que la velocidad promedio que reporta esa
+   telemetría no se aleje más de 35% de la velocidad que implica el
+   tiempo real de viaje. Un viaje con duración plausible pero telemetría
+   que no cuadra igual queda marcado — así la telemetría de verdad pesa
+   en la decisión.
+
+Verificado a mano contra los números exactos del mockup 1 (no contra
+Supabase real todavía, ver pendiente abajo): 47 min → dentro de
+40–55 → verificado; 7 min → fuera de rango → "muy corto para completar
+la Ruta 47 (esperado 40-55 min, reportado 7 min)", el mismo texto que
+pide el mockup.
+
+**Piso de seguridad — estado tras Feature 2:**
+3. RLS en `trips` — ✅ (`auth.uid() = driver_id`, select+insert, sin
+   update/delete).
+4. Validación server-side — ✅ hora de inicio/fin requeridas y
+   validadas como rango real (`lib/trips.ts`, zod) antes de calificar el
+   viaje; el status nunca lo decide el cliente.
+
+**Todavía no probado contra una base de datos real** — Feature 1 seguía
+pendiente de que se conectara Supabase cuando se construyó esto (ver
+sección anterior). No confirmes esta feature como probada hasta correr
+el pase mecánico del packet con cuentas reales: viaje plausible →
+verificado, viaje implausible → marcado y excluido del total, segundo
+conductor no ve los viajes del primero.
+
+**Siguiente movimiento (próxima sesión):** Feature 3 — reporte de
+ingresos verificado (mockup 2): rango de fechas, conteo
+verificados/marcados, ingreso estimado (viajes verificados × tarifa
+promedio de la ruta), método de verificación visible en el reporte.
