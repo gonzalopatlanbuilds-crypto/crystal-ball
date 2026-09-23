@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { registrarViaje } from "./actions";
 import TripForm from "@/components/TripForm";
@@ -100,12 +101,15 @@ export default async function TripsPage() {
               Solo los viajes verificados cuentan en tu reporte de ingresos.
             </p>
           </div>
+
+          <Link
+            href="/report"
+            className="mt-6 inline-block rounded-lg bg-blue-800 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Generar reporte de ingresos
+          </Link>
         </>
       )}
-
-      <p className="mt-6 text-sm text-zinc-400">
-        El reporte de ingresos llega en la siguiente entrega.
-      </p>
     </main>
   );
 }

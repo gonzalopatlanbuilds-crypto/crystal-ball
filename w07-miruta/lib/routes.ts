@@ -8,4 +8,5 @@ export interface Route {
   expected_duration_min_high: number;
   expected_speed_kmh_low: number;
   expected_speed_kmh_high: number;
+  avg_fare_mxn: number;
 }

@@ -156,3 +156,44 @@ funciona con una sesión real.
 Supabase real (viaje plausible → verificado, viaje implausible →
 marcado, segundo conductor no ve viajes del primero) — sigue pendiente,
 independiente de este fix de login.
+
+## 2026-09-23 — Feature 3: reporte de ingresos verificado
+
+**Qué cambió:** `/report` (mockup 2) — formulario de rango de fechas
+(`?from=&to=`, GET, sin JS) + tarjeta de reporte: chofer (nombre de
+Google o email), ruta, periodo, "N verificados de M registrados", "K
+marcados por inconsistencia no se incluyen", ingreso estimado, y la caja
+de método de verificación. Botón "Descargar / Compartir" con
+`window.print()` (mismo patrón que `PrintButton` de w05-timing-caf) en
+vez de generar un PDF con una librería — cubre "descargable" y
+"compartible" sin una dependencia nueva.
+
+`sql/schema.sql` agrega `avg_fare_mxn` a `routes` vía `alter table` (la
+tabla ya existe en producción desde la Feature 1, así que no podía ir en
+el `create table`) — $150 MXN simulados por viaje verificado de Ruta 47,
+mismo orden de magnitud que el mockup (124 × ~150 ≈ $18,600). Correr
+`sql/schema.sql` completo de nuevo es seguro: es idempotente
+(`add column if not exists`).
+
+`lib/report.ts` (`calcularReporte`) es la única fuente de verdad del
+total — filtra por `status === 'verified'` sobre los viajes que ya
+trajo la query (nunca vuelve a evaluar plausibilidad), así que un viaje
+marcado estructuralmente no puede colarse al ingreso estimado.
+
+**Piso de seguridad — estado tras Feature 3:** sin cambios de fondo — el
+reporte solo lee `trips`/`routes`, protegido por las mismas RLS de las
+Features 1 y 2. Sigue pendiente únicamente Vercel (Deployment
+Protection).
+
+**Pendiente de que pruebes tú:** correr `sql/schema.sql` de nuevo en el
+SQL Editor (para la columna `avg_fare_mxn`), luego el pase mecánico
+completo: loguear un viaje verificado y uno marcado, confirmar que
+`/report` cuenta solo el verificado en el total y en el ingreso
+estimado, y confirmar que un segundo conductor no ve ni los viajes ni
+el reporte del primero.
+
+**Siguiente movimiento (próxima sesión):** Feature 4 — revisión del
+lenguaje de `/trips` y `/report` contra la Condición 1 del Blueprint
+(nunca debe leerse como vigilancia con etiqueta amigable), más una
+explicación explícita del beneficio para el conductor en la pantalla de
+registro.

@@ -17,6 +17,9 @@ export default function AppHeader({ email }: Props) {
             <Link href="/trips" className="hover:text-white">
               Mis viajes
             </Link>
+            <Link href="/report" className="hover:text-white">
+              Reporte
+            </Link>
           </nav>
         </div>
         {email && (

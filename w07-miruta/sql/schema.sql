@@ -90,3 +90,23 @@ drop policy if exists "drivers insert own trips" on public.trips;
 create policy "drivers insert own trips"
   on public.trips for insert
   with check (auth.uid() = driver_id);
+
+-- ============================================================
+-- Feature 3: reporte de ingresos — necesita una tarifa promedio por ruta
+-- para convertir "viajes verificados" en un ingreso estimado. `routes`
+-- ya existe en producción desde la Feature 1, así que esto es un
+-- `alter table`, no parte del `create table` de arriba — correr este
+-- archivo completo de nuevo es seguro (`add column if not exists` no
+-- truena si la columna ya está).
+-- ============================================================
+
+alter table public.routes
+  add column if not exists avg_fare_mxn numeric check (avg_fare_mxn > 0);
+
+-- Tarifa agregada por viaje completo de Ruta 47 (una corrida junta a
+-- varios pasajeros, no el precio de un solo abordaje) — dato simulado,
+-- mismo orden de magnitud que el mockup del packet (124 viajes
+-- verificados × ~150 = ~$18,600 MXN).
+update public.routes set avg_fare_mxn = 150 where name = 'Ruta 47' and avg_fare_mxn is null;
+
+alter table public.routes alter column avg_fare_mxn set not null;

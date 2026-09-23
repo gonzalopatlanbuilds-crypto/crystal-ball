@@ -24,7 +24,7 @@ completo.
   debe cargar sin sesión de Vercel. Confirmar esto antes de dar por
   terminada cada entrega (falla real de la semana pasada).
 
-## Estado actual: Feature 2 (registro de viaje + chequeo de plausibilidad)
+## Estado actual: Feature 3 (reporte de ingresos verificado)
 
 ## Desarrollo local
 
