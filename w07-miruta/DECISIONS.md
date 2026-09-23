@@ -297,3 +297,11 @@ misma lógica de `evaluarViaje` siempre server-side.
 fix (o al menos volver a loguear los mismos 3 viajes de prueba) para
 confirmar que ya no se marcan por telemetría, y confirmar que el deploy
 de Vercel más reciente sirve este cambio.
+
+**Deploy verificado desde afuera (`https://w07-miruta.vercel.app`):**
+`/login` responde 200 sin muro de Vercel SSO (Deployment Protection
+apagado, confirmado también server-side); `/dashboard`, `/trips` y
+`/report` redirigen 307 a `/login` sin sesión — `proxy.ts` activo en
+producción. No se pudo confirmar desde afuera que el build corresponde
+exactamente al commit `4375473` (eso requiere el dashboard de Vercel o
+una sesión real) — pendiente de una última pasada visual del usuario.
