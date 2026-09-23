@@ -114,3 +114,45 @@ conductor no ve los viajes del primero.
 ingresos verificado (mockup 2): rango de fechas, conteo
 verificados/marcados, ingreso estimado (viajes verificados × tarifa
 promedio de la ruta), método de verificación visible en el reporte.
+
+## 2026-09-23 — Feature 1 probado contra Supabase real: bug de OAuth encontrado y arreglado
+
+**Qué pasó:** con `.env.local` ya lleno y el proyecto de Supabase creado,
+el login con Google fallaba en cada intento, regresando a `/login` sin
+ningún error visible en la UI. El log del dev server mostraba el error
+real en cada uno:
+
+```
+GET /auth/callback?error=server_error&error_code=unexpected_failure&error_description=Unable+to+exchange+external+code...
+```
+
+Fallaba desde el primer intento (no en un reintento), lo que descartaba
+un código de un solo uso consumido dos veces — apuntaba a un mismatch
+entre Google Cloud Console y Supabase, no a un bug de este repo (`proxy.ts`
+y `app/auth/callback/route.ts` se comportaron como estaba diseñado:
+redirigieron a `/login?error=auth` en vez de crashear).
+
+**Causa raíz:** el "Authorized redirect URI" configurado en el OAuth
+Client de Google Cloud Console no coincidía con la URL de callback que
+Supabase realmente usa (`https://<project-ref>.supabase.co/auth/v1/callback`
+— nunca `localhost:3000/auth/callback`, esa va en Redirect URLs del lado
+de Supabase, que ya estaba bien). Se corrigió el redirect URI en Google
+Cloud Console.
+
+**Confirmado tras el fix:** login con Google completo en local
+(`/auth/callback?code=...` → `/` → `/dashboard 200` en el log), y el
+dashboard muestra la tarjeta de Ruta 47 con los datos reales leídos de
+Supabase vía RLS (18.5 km, 40–55 min, 20–28 km/h) — confirma que
+`sql/schema.sql` se corrió bien y que la policy de select de `routes`
+funciona con una sesión real.
+
+**Piso de seguridad — Feature 1, actualizado:**
+3. RLS en `routes` — ✅ confirmado con datos reales (no solo revisado en
+   el SQL), sesión real de Google leyendo la ruta sembrada.
+6. Deployment Protection de Vercel — sigue ⏳, Vercel todavía no se ha
+   configurado.
+
+**No probado todavía:** el pase mecánico completo de Feature 2 contra
+Supabase real (viaje plausible → verificado, viaje implausible →
+marcado, segundo conductor no ve viajes del primero) — sigue pendiente,
+independiente de este fix de login.
