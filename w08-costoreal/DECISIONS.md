@@ -418,3 +418,7 @@ contra Supabase real.
 sesión siga viendo sus casos y escenarios en producción. `authenticated`
 conserva EXECUTE sobre `my_org_id()`, así que debería funcionar, pero no se
 ha visto en pantalla.
+
+**Decisión (tuya):** se queda el error de permiso para `anon` en vez de
+`[]`. No se agrega `to authenticated` a las policies, porque la app nunca
+consulta esas tablas sin sesión.
