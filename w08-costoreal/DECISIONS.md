@@ -223,3 +223,29 @@ el default. Y nada contra Supabase real todavía.
 **Primer paso de la siguiente sesión:** con Supabase listo, abrir
 `/scenarios` con el caso del mockup registrado, cambiar entre 10/100/1,000
 y comparar con los números de arriba. Después, Feature 4.
+
+## 2026-09-30 — Primer deploy en Vercel (deploy 1)
+
+**Qué pasó:** no te dejaba desplegar el proyecto. Al revisar los estados
+que Vercel publica en GitHub, cada push desplegaba seis proyectos
+(w03–w07 y `crystal-ball`) pero ningún `w08-costoreal`. Con el push de
+`4f06a48` apareció por primera vez "Vercel – w08-costoreal" y terminó en
+**success**. No vi el error original, así que la causa exacta **no está
+confirmada**; lo más probable es que el proyecto se conectó después del
+último push y no había ningún commit nuevo que lo disparara.
+
+**URL de producción:** `https://w08-costoreal-gonzabuilds.vercel.app`.
+Ojo: `w08-costoreal.vercel.app` da 404. Ese subdominio corto no
+quedó asignado a este proyecto, y a diferencia de w07 (`w07-miruta.vercel.app`)
+no hay que usarlo.
+
+**Verificado desde afuera con curl, sin ninguna sesión:**
+- `/login` → 200 y muestra "CostoReal" + "Datos simulados". No aparece
+  el muro de Vercel Authentication, o sea que **Deployment Protection está
+  apagado** en esta URL.
+- `/`, `/dashboard` y `/scenarios` → 307 a `/login`, así que sin sesión
+  se redirige a login.
+
+**Falta:** la callback de producción en Supabase (Redirect URLs:
+`https://w08-costoreal-gonzabuilds.vercel.app/auth/callback`), el login
+real con Google en producción y confirmar en incógnito desde tu navegador.
