@@ -383,3 +383,38 @@ segunda defensa si alguien vuelve a otorgar el permiso.
 en el SQL Editor de producción (es idempotente: no borra datos). **No
 verificado todavía:** después de correrlo, `rpc/create_org` como anon
 debe dar `permission denied` — se vuelve a probar igual que arriba.
+
+## 2026-09-30 — Verificado: `anon` ya no ejecuta funciones (bug 2 de F5 cerrado)
+
+Corriste `sql/schema.sql` completo en producción y confirmaste que el login
+funciona en local. Se repitió la prueba desde afuera con la anon key del
+bundle público de producción:
+
+| Llamada como `anon` | Antes | Ahora |
+|---|---|---|
+| `rpc/create_org` | **se ejecutaba** (insert + rollback) | `42501 permission denied` ✅ |
+| `rpc/join_org` | se ejecutaba ("Código no encontrado") | `42501 permission denied` ✅ |
+| `rpc/my_org_id` | — | `42501 permission denied` ✅ |
+| `rpc/generar_join_code` | — | `42501 permission denied` ✅ |
+| `rpc/sembrar_volumen_simulado` | `permission denied` | `permission denied` ✅ |
+| select en las 5 tablas | `[]` | `42501 permission denied for function my_org_id` |
+
+**Efecto secundario (esperado, sigue siendo seguro):** las tablas ya no le
+responden `[]` a `anon`, sino un error. Las policies no dicen
+`to authenticated`, así que Postgres las evalúa también para `anon`, llama
+a `my_org_id()` y `anon` ya no puede ejecutarla. Sigue sin leerse nada. La
+app no consulta tablas sin sesión (el middleware redirige antes), así que
+no afecta la UI. Endurecimiento opcional, no aplicado: agregar
+`to authenticated` a cada policy para que `anon` reciba `[]` sin evaluar
+nada.
+
+**Local:** `npm run dev` con `.env.local` real (mismo proyecto de Supabase
+que producción). Rutas protegidas → `/login` y login con Google
+confirmado por ti. El callback con código falso registra
+`pkce_code_verifier_not_found`, así que el log de diagnóstico funciona
+contra Supabase real.
+
+**Todavía sin confirmar después de correr el SQL:** que una cuenta con
+sesión siga viendo sus casos y escenarios en producción. `authenticated`
+conserva EXECUTE sobre `my_org_id()`, así que debería funcionar, pero no se
+ha visto en pantalla.
