@@ -249,3 +249,61 @@ no hay que usarlo.
 **Falta:** la callback de producción en Supabase (Redirect URLs:
 `https://w08-costoreal-gonzabuilds.vercel.app/auth/callback`), el login
 real con Google en producción y confirmar en incógnito desde tu navegador.
+
+## 2026-09-30 — Bug: el primer clic en "Iniciar sesión con Google" regresa a /login
+
+**Síntoma (reportado por ti, en producción):** el primer intento de login
+termina en `/login`, y el segundo sí entra.
+
+**Lo que se confirmó con curl contra producción:** cualquier falla del
+login terminaba en `/login` **sin mensaje en pantalla y sin nada en los
+logs de Vercel**. Un código inválido (`/auth/callback?code=falso` →
+`/login?error=auth`), un error devuelto por Supabase (`?error=...` →
+`/login?error=auth`) y un `?code` que llega a la raíz en vez de al
+callback (`/?code=abc` → `/login`) se veían idénticos para la persona. El
+callback descartaba el `error` de `exchangeCodeForSession` sin
+registrarlo. Esto es lo que hacía imposible diagnosticar el bug, y es un
+bug en sí mismo.
+
+**Cambio:**
+- `app/auth/callback/route.ts`: cada salida de error deja un
+  `console.error` distinto en los logs de Vercel. Registra el origen, el
+  error de Supabase si vino en la URL (`error`, `error_code`,
+  `error_description`) y el status/código/mensaje de
+  `exchangeCodeForSession`. También registra **si la cookie
+  `…-code-verifier` de PKCE estaba presente**, solo los nombres de las
+  cookies y nunca sus valores.
+- `app/page.tsx`: si llega un `?code` a la raíz (Supabase lo manda a su
+  "Site URL" cuando el `redirectTo` no está en la lista de Redirect URLs),
+  se reenvía a `/auth/callback` con un `console.warn`, en vez de perderse.
+- `app/login/page.tsx`: con `?error=auth` muestra "No se pudo completar el
+  inicio de sesión. Intenta de nuevo." (`useSearchParams` dentro de
+  `Suspense`, así `/login` sigue siendo estática).
+
+**Verificado localmente con `next start`:** `?error=…` → `/login?error=auth`
+con el log "Supabase devolvió error"; sin `code` → `/login?error=auth` con
+el log "llegó sin ?code"; `/?code=abc123` → `/auth/callback?code=abc123`
+con el warn. `rm -rf .next && npm run build` y `npm run lint` limpios.
+
+**Causa raíz: NO confirmada todavía.** Hipótesis principal, que
+coincide exactamente con "falla el primero, funciona el segundo": se
+abrió el login desde **una URL de Vercel distinta** a la registrada en
+Supabase. Por ejemplo, la URL del deployment
+(`w08-costoreal-eq6ztyfid-gonzabuilds.vercel.app`, la que abre el botón
+"Visit" de un deployment) en lugar de
+`w08-costoreal-gonzabuilds.vercel.app`. Esa URL de callback no está en la
+lista, así que Supabase manda el código a su Site URL. PKCE guarda el
+`code_verifier` en una cookie del dominio donde se hizo clic, y en el
+otro dominio no existe, así que el intercambio falla. En el segundo clic
+ya estás en el dominio correcto, cookie y callback coinciden, y entra. Si
+es eso, el log nuevo va a mostrar `hayVerifier: false` con un `origin`
+distinto a la URL donde hiciste clic.
+
+**Nota lateral:** las tres variables de `.env.local` están vacías
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y
+`ANTHROPIC_API_KEY`), así que el login local no puede funcionar hasta
+llenarlas. En producción no afecta porque Vercel tiene las suyas.
+
+**Siguiente paso:** desplegar esto, reproducir el bug en incógnito
+anotando **en qué URL exacta** se hace el primer clic, y leer el log de
+`auth/callback` en Vercel (Logs, filtrar por `auth/callback`).

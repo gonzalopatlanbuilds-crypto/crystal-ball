@@ -6,7 +6,18 @@ import { createClient } from "@/lib/supabase/server";
 // renderiza nada, solo decide a dónde mandar a quien llega: sin sesión a
 // /login, con sesión pero sin organización a /onboarding, si no a
 // /dashboard.
-export default async function Home() {
+export default async function Home({ searchParams }: PageProps<"/">) {
+  // Si el redirectTo del login no está en la lista de Redirect URLs de
+  // Supabase, Supabase manda el ?code a su "Site URL" (la raíz) en vez de
+  // a /auth/callback, y aquí se perdía en silencio. Se reenvía al callback
+  // y queda registrado, porque indica una configuración de Supabase que
+  // hay que corregir, no algo normal.
+  const { code } = await searchParams;
+  if (typeof code === "string" && code) {
+    console.warn("Home: llegó ?code a la raíz — revisar Redirect URLs en Supabase");
+    redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

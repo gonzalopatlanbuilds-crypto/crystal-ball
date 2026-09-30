@@ -1,7 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+// /auth/callback manda aquí con ?error=auth cuando el login falla. Antes no
+// se mostraba nada y el fallo se veía como "no pasó nada". El Suspense
+// deja que /login siga siendo estática aunque lea la query string.
+function ErrorDelCallback() {
+  const params = useSearchParams();
+  if (params.get("error") !== "auth") return null;
+  return (
+    <p className="mt-3 text-sm text-red-600">
+      No se pudo completar el inicio de sesión. Intenta de nuevo.
+    </p>
+  );
+}
 
 export default function LoginPage() {
   const [cargando, setCargando] = useState(false);
@@ -41,7 +55,15 @@ export default function LoginPage() {
         >
           {cargando ? "Redirigiendo…" : "Iniciar sesión con Google"}
         </button>
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error ? (
+          <p className="mt-3 text-sm text-red-600">{error}</p>
+        ) : (
+          !cargando && (
+            <Suspense fallback={null}>
+              <ErrorDelCallback />
+            </Suspense>
+          )
+        )}
       </div>
     </main>
   );
