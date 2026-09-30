@@ -83,3 +83,69 @@ Google + Vercel (abajo), probar login real e incógnito, y después Feature
 5. Proyecto en Vercel con **Root Directory = `w08-costoreal`**, las tres
    variables de entorno, y **Deployment Protection apagado** (Settings →
    Deployment Protection → Vercel Authentication: Disabled).
+
+## 2026-09-30 — Decisiones de Feature 1 aprobadas
+
+Aprobadas por ti: (1) la tabla `cases` se queda; (2) la tarifa capturada
+es la **tarifa cargada final**, sin multiplicador oculto — el costo tiene
+que poder verificarse a mano con lo que está en pantalla, y eso es parte
+del punto de este slice. El $253 del mockup 1 no se reproduce a propósito
+(sus propios números suman $211.67). Feature 1 pusheada (`53cb548`).
+
+## 2026-09-30 — Feature 2: registro de tiempo por caso + costo real
+
+**Qué cambió:**
+- Dashboard: lista de casos del piloto con minutos y costo real por caso,
+  y botón "+ Nuevo caso simulado" (solo elige tipo; el número `#0001` lo
+  asigna la base).
+- `/cases/[id]` (mockup 1): entradas ordenadas por fase (intake →
+  triage → paquete de evidencia → seguimiento), cada una con personal,
+  tarifa y **la cuenta completa visible** (`25 min × $220/hora ÷ 60 =
+  $91.67 MXN`), y la caja "Costo real de este caso". Formulario para
+  registrar tiempo; quien registró una entrada puede borrarla (corregir =
+  borrar y volver a capturar; no hay edición).
+- El botón "Ver modelo de financiamiento" del mockup no está todavía:
+  llega con la Feature 3 (la pantalla a la que lleva no existe aún).
+
+**Regla de redondeo (decisión nueva):** cada entrada se redondea a
+centavos primero y el total es la suma de esos centavos. Así el total
+siempre coincide con sumar a mano los costos que se ven por entrada.
+Redondear solo al final podía dar 1 centavo de diferencia (ej. tres
+entradas de 1 min a $50/h: se ven $0.83 cada una, total $2.49 — no
+$2.50).
+
+**Validación server-side** (`lib/tiempo.ts`, zod, en el server action):
+minutos enteros 1–480 por entrada; tarifa cargada $50–$2,000 MXN/h con
+máximo 2 decimales; nombre de personal 1–60 caracteres. El formulario
+tiene `noValidate` a propósito, para que el error que se ve inline sea
+el del servidor y no un tooltip del navegador. Lo capturado se devuelve
+en el estado del action para que un error no borre el formulario (React
+19 resetea el `<form>` después de cada action). Los mismos límites están
+como `check` en la base (Feature 1).
+
+**Bug evitado antes de llegar a pruebas:** la primera versión revisaba
+"máximo 2 decimales" con `Math.round(n * 100) === n * 100`, que rechaza
+`180.10` porque `180.1 * 100 = 18009.999999999998` en punto flotante. Se
+cambió a revisar el texto con regex. Cubierto en la prueba de abajo.
+
+**Verificado (mecánico, sin base de datos):** script de node contra
+`lib/costos.ts` y `lib/tiempo.ts` — 23/23 OK:
+- Números del mockup 1 calculados a mano: 12 min × $180 = $36.00, 18 ×
+  $180 = $54.00, 25 × $220 = $91.67, 10 × $180 = $30.00 → **$211.67, 65
+  min**. El código da exactamente eso.
+- Rechazos con mensaje en español: minutos `-5`, `0`, `12.5`, `481`,
+  vacío, `abc`; tarifa `49.99`, `2000.01`, `-180`, `180.555`, vacía.
+  Límites incluidos (1 min, 480 min, $50, $2,000) aceptados.
+- `rm -rf .next && npm run build` y `npm run lint` limpios.
+
+**No verificado todavía (necesita tu Supabase):** que el insert pase las
+policies reales, el error inline en el navegador, y la aceptación "una
+segunda organización no ve los registros de la primera" — hay que
+probarlo con dos cuentas de Google en dos organizaciones distintas: la
+cuenta B no debe ver los casos de A en el dashboard, y abrir
+`/cases/<id-de-un-caso-de-A>` con la cuenta B debe dar 404.
+
+**Primer paso de la siguiente sesión:** con Supabase listo, registrar a
+mano el caso del mockup (4 entradas) y confirmar $211.67 en pantalla,
+probar un minuto negativo en el navegador, y la prueba de dos
+organizaciones. Después, Feature 3.

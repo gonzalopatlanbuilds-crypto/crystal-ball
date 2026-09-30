@@ -26,7 +26,7 @@ confirmado etiquetado como "No confirmado" (Condición 5 del Blueprint:
 - **El resumen de IA nunca afirma ni insinúa una alianza o patrocinio**, y
   toda cifra no confirmada lleva "no confirmado".
 
-## Estado actual: Feature 1 (auth + shell vacío + volumen simulado sembrado)
+## Estado actual: Feature 2 (registro de tiempo por caso + costo real por caso)
 
 ## Desarrollo local
 
