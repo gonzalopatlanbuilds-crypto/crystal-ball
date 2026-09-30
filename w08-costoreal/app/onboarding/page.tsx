@@ -1,0 +1,45 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import OnboardingForms from "@/components/OnboardingForms";
+
+export default async function OnboardingPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("OnboardingPage: no se pudo leer el perfil", error);
+  }
+
+  if (profile) {
+    redirect("/dashboard");
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-1 flex-col justify-center p-6">
+      <h1 className="text-lg font-semibold text-zinc-900">Un último paso</h1>
+      <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        Datos simulados — ningún piloto, caso ni persona aquí es real.
+      </p>
+      <p className="mt-4 text-sm text-zinc-600">
+        Los casos y registros de tiempo se filtran por organización piloto:
+        solo quien esté en el mismo piloto que tú (staff o coordinación)
+        puede verlos.
+      </p>
+      <div className="mt-6">
+        <OnboardingForms />
+      </div>
+    </main>
+  );
+}
