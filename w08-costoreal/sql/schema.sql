@@ -47,7 +47,7 @@ as $$
   select org_id from public.profiles where id = auth.uid();
 $$;
 
-revoke all on function public.my_org_id() from public;
+revoke all on function public.my_org_id() from public, anon;
 grant execute on function public.my_org_id() to authenticated;
 
 drop policy if exists "members select own org profiles" on public.profiles;
@@ -147,6 +147,8 @@ begin
 end;
 $$;
 
+revoke all on function public.generar_join_code() from public, anon, authenticated;
+
 create or replace function public.create_org(p_name text)
 returns table (org_id uuid, join_code text)
 language plpgsql
@@ -158,6 +160,10 @@ declare
   v_code text;
   v_intentos int := 0;
 begin
+  if auth.uid() is null then
+    raise exception 'Se requiere sesión.';
+  end if;
+
   if exists (select 1 from public.profiles where id = auth.uid()) then
     raise exception 'Ya perteneces a una organización.';
   end if;
@@ -190,7 +196,13 @@ begin
 end;
 $$;
 
-revoke all on function public.create_org(text) from public;
+-- Bug encontrado en la pasada mecánica (Feature 5): con solo "from public",
+-- anon seguía pudiendo ejecutar create_org() — Supabase le da EXECUTE a
+-- anon/authenticated por default privileges en funciones nuevas de
+-- `public`. Una llamada anónima llegaba a insertar en `orgs` y solo
+-- fallaba (con rollback) en `profiles` por auth.uid() nulo. Ahora se
+-- revoca de anon explícitamente y la función además rechaza sin sesión.
+revoke all on function public.create_org(text) from public, anon;
 grant execute on function public.create_org(text) to authenticated;
 
 create or replace function public.join_org(p_join_code text)
@@ -202,6 +214,10 @@ as $$
 declare
   v_org_id uuid;
 begin
+  if auth.uid() is null then
+    raise exception 'Se requiere sesión.';
+  end if;
+
   if exists (select 1 from public.profiles where id = auth.uid()) then
     raise exception 'Ya perteneces a una organización.';
   end if;
@@ -223,7 +239,7 @@ begin
 end;
 $$;
 
-revoke all on function public.join_org(text) from public;
+revoke all on function public.join_org(text) from public, anon;
 grant execute on function public.join_org(text) to authenticated;
 
 -- ============================================================

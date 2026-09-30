@@ -348,3 +348,38 @@ resumen de IA) todavía no se ha hecho contra la base real, y la Feature 4
 aún no existe. Esta entrada cubre el requisito "al menos un bug real
 encontrado y arreglado, con redeploy". No sustituye el resto de la
 pasada.
+
+## 2026-09-30 — Feature 5: segundo bug real — `anon` podía ejecutar `create_org()`
+
+**Cómo se encontró:** probando desde afuera el criterio de Feature 1
+"ninguna tabla legible sin auth". La anon key es pública por diseño
+(está en el bundle de producción), y con ella se consultó cada tabla y
+función como rol `anon` contra el Supabase de producción:
+- `orgs`, `profiles`, `cases`, `case_time_logs` y `case_volume_scenarios`
+  → `[]` (HTTP 200 vacío). **RLS funciona: nada se filtra sin sesión.** ✅
+- `rpc/sembrar_volumen_simulado` → `42501 permission denied`. ✅
+- `rpc/create_org` → **se ejecutó**. Llegó a insertar en `orgs` y falló
+  solo en `profiles` (`null value in column "id"`, porque `auth.uid()` es
+  nulo sin sesión). El error hizo rollback de todo el statement, así que
+  **no quedó ninguna fila**. Aun así es un hueco del piso de seguridad: un
+  anónimo no debería poder llegar a escribir. Nota: esta prueba fue una
+  llamada de escritura real contra producción, sin efecto por el
+  rollback.
+
+**Causa:** `revoke all ... from public` no quita el EXECUTE que Supabase
+les da a `anon`/`authenticated` por default privileges en funciones
+nuevas de `public`. Es la misma trampa que ya se había evitado para
+`sembrar_volumen_simulado`, pero no para las funciones copiadas de w06
+(probablemente w06 tiene el mismo hueco; no se revisó).
+
+**Arreglo en `sql/schema.sql`:** revoke explícito de `anon` en
+`my_org_id()`, `create_org()` y `join_org()`; `generar_join_code()`
+revocada de todos (solo la llama `create_org`, que corre como owner); y
+`create_org()`/`join_org()` ahora empiezan con
+`if auth.uid() is null then raise exception 'Se requiere sesión.'`, como
+segunda defensa si alguien vuelve a otorgar el permiso.
+
+**Pendiente de que hagas tú:** volver a correr `sql/schema.sql` completo
+en el SQL Editor de producción (es idempotente: no borra datos). **No
+verificado todavía:** después de correrlo, `rpc/create_org` como anon
+debe dar `permission denied` — se vuelve a probar igual que arriba.
