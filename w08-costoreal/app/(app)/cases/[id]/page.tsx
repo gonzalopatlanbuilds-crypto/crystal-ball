@@ -145,6 +145,13 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
         </p>
       </div>
 
+      <Link
+        href="/scenarios"
+        className="mt-4 inline-block rounded-lg bg-sky-800 px-6 py-3 text-sm font-medium text-white hover:bg-sky-700"
+      >
+        Ver modelo de financiamiento
+      </Link>
+
       <div className="mt-6">
         <TimeEntryForm caseId={caso.id} />
       </div>

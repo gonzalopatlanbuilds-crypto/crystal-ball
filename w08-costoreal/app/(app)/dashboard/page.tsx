@@ -61,7 +61,15 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-6">
-      <h1 className="text-lg font-semibold text-zinc-900">Panel del piloto</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold text-zinc-900">Panel del piloto</h1>
+        <Link
+          href="/scenarios"
+          className="rounded-lg bg-sky-800 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+        >
+          Ver modelo de financiamiento
+        </Link>
+      </div>
       <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
         {SIMULADO_AVISO}
       </p>

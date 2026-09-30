@@ -149,3 +149,77 @@ cuenta B no debe ver los casos de A en el dashboard, y abrir
 mano el caso del mockup (4 entradas) y confirmar $211.67 en pantalla,
 probar un minuto negativo en el navegador, y la prueba de dos
 organizaciones. Después, Feature 3.
+
+## 2026-09-30 — Decisiones de Feature 2 aprobadas
+
+Aprobadas por ti: redondeo por entrada (el total = suma de lo visible) y
+la corrección del chequeo de decimales. Feature 2 pusheada (`7680f47`).
+
+## 2026-09-30 — Feature 3: comparación de escenarios de financiamiento
+
+**Qué cambió:**
+- `/scenarios` (mockup 2): selector de escala 10/100/1,000 (links con
+  `?escala=`, renderizado en el servidor), costo mensual proyectado, tabla
+  de desglose por tipo de caso y los tres escenarios con su etiqueta.
+- Botón "Ver modelo de financiamiento" en el panel y en cada caso.
+- `lib/escenarios.ts` (sin imports, probado con node): la proyección, el
+  punto de equilibrio y el déficit — la parte de "automatización" del
+  Dragon Stack. `lib/modelo.ts` carga los datos con la sesión (RLS) y
+  llama esa función; la Feature 4 va a volver a llamarla en el servidor en
+  lugar de confiar en números que mande el navegador.
+- `lib/etiquetas.ts`: las tres etiquetas en una sola fuente, compartida
+  con la Feature 4.
+
+**Cómo se proyecta el costo (decisión nueva):** costo mensual = Σ por tipo
+(casos/mes simulados × costo promedio real de los casos de ese tipo con
+tiempo registrado). Si un tipo todavía no tiene ningún caso registrado se
+usa el promedio de *todos* los casos registrados, y la pantalla lo marca
+("estimado: promedio general*"), con la nota de que registrar un caso de
+ese tipo reemplaza la estimación. Los casos creados sin tiempo no entran
+al promedio (costarían $0 y bajarían el costo falsamente). Sin ningún caso
+con tiempo, la pantalla dice que no hay nada que proyectar — no inventa un
+costo. Con un solo caso registrado, el resultado es igual que en el
+mockup: escala × costo del caso.
+
+**Etiquetas:**
+- A — Víctima paga: ingreso $0 (Condición 4), "No confirmado: sin fuente
+  de ingreso, cierre en el primer mes".
+- B — Patrocinador paga por caso: tarifa **hipotética**, $300 por default
+  (la del mockup) y editable en pantalla ($0 < tarifa ≤ $10,000, 2
+  decimales; si lo que llega en la URL no es válido se usa el default y se
+  muestra un aviso). Muestra ingreso, superávit/déficit y **punto de
+  equilibrio** (tarifa mínima por caso que cubre el costo, redondeada
+  hacia arriba a centavos). "No confirmado: ningún patrocinador ha
+  aceptado este modelo todavía" — y el texto aclara que cambiar la tarifa
+  no la vuelve más real.
+- C — Sin patrocinador: déficit = costo total − $0, "Confirmado: cálculo
+  directo de tiempo de personal registrado". **Matiz agregado debajo:** lo
+  confirmado es el costo por caso; el volumen es simulado (y se avisa si
+  algún tipo usa el promedio general). El prompt pide "Confirmado" para C
+  y lo es en cuanto al costo, pero sin esta línea la tarjeta verde podía
+  leerse como "el déficit a 1,000 casos está confirmado", que no es cierto
+  — justo lo que la persona del Layer 1 (directora escéptica) atacaría.
+
+**Verificado (mecánico, sin base de datos):** node contra
+`lib/escenarios.ts`, 29/29 OK:
+- Solo el caso del mockup ($211.67): a 10/100/1,000 casos el costo es
+  $2,116.70 / $21,167.00 / $211,670.00; déficit sin patrocinio = total −
+  0 en las tres; tarifa $300 → superávit $883.30 / $8,833.00 / $88,330.00;
+  equilibrio $211.67.
+- Varios tipos a mano: toma de cuenta (211.67 + 150.00)/2 = 180.835 →
+  $180.84; suplantación $300.00; colecta falsa sin casos → promedio
+  general (211.67 + 150 + 300)/3 = 220.556 → $220.56. A 100:
+  50×180.84 + 30×300 + 20×220.56 = 9,042 + 9,000 + 4,411.20 =
+  **$22,453.20**; equilibrio $224.54 (hacia arriba). El código da
+  exactamente eso. Un caso sin tiempo no entra.
+- Sin casos con tiempo → `null` (no inventa costo).
+- `rm -rf .next && npm run build` y `npm run lint` limpios.
+
+**No verificado:** `leerParametros()` (vive en un módulo `server-only`,
+no se puede importar desde node directo) — probarlo en el navegador con
+`/scenarios?escala=50` y `?tarifa=-1`, que deben mostrar el aviso y usar
+el default. Y nada contra Supabase real todavía.
+
+**Primer paso de la siguiente sesión:** con Supabase listo, abrir
+`/scenarios` con el caso del mockup registrado, cambiar entre 10/100/1,000
+y comparar con los números de arriba. Después, Feature 4.
