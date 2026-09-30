@@ -307,3 +307,44 @@ llenarlas. En producción no afecta porque Vercel tiene las suyas.
 **Siguiente paso:** desplegar esto, reproducir el bug en incógnito
 anotando **en qué URL exacta** se hace el primer clic, y leer el log de
 `auth/callback` en Vercel (Logs, filtrar por `auth/callback`).
+
+## 2026-09-30 — Feature 5: bug de login encontrado y arreglado (cierre)
+
+**Bug (encontrado por ti en producción):** el primer clic en "Iniciar
+sesión con Google" regresaba a `/login`; el segundo sí entraba.
+
+**Arreglo:** `8d1a5c0` (desplegado, deploy de Vercel en success).
+**Confirmado por ti en producción:** después de ese deploy el login
+funciona al primer clic.
+
+**Qué se diagnosticó y con qué evidencia:** con **curl contra
+producción**, no con logs de Vercel (no tengo acceso a ellos desde aquí y
+no los he visto). Tres fallas distintas (código inválido, `?error` de
+Supabase y `?code` en la raíz) terminaban todas en `/login` sin mensaje y
+sin log, y el `?code` que llegaba a `/` se perdía. Después del deploy, en
+producción: `/?code=abc` → `/auth/callback?code=abc` y
+`/auth/callback` sin código → `/login?error=auth`.
+
+**Causa raíz: probable, NO confirmada con logs.** El único cambio de
+`8d1a5c0` que afecta un login *exitoso* es el reenvío de `?code` desde `/`
+hacia `/auth/callback`. Si eso es lo que lo arregló, el código de Google
+estaba llegando a la raíz y no al callback. Eso pasa cuando el
+`redirectTo` no está en las Redirect URLs de Supabase y Supabase usa su
+Site URL. La hipótesis anterior (dos dominios de Vercel distintos) **no
+cuadra** con que el arreglo funcione: en ese caso la cookie de PKCE
+seguiría en el otro dominio y el reenvío no la traería. Tampoco se puede
+descartar que la configuración de Supabase haya cambiado al mismo tiempo.
+**Cómo cerrarlo con evidencia:** en Vercel → Logs, buscar
+`Home: llegó ?code a la raíz`. Si aparece en los logins recientes, el
+reenvío es el que te está salvando y hay que agregar
+`https://w08-costoreal-gonzabuilds.vercel.app/auth/callback` a Redirect
+URLs de Supabase, para que el código llegue directo al callback. Si no
+aparece, la causa fue otra (probablemente un cambio de configuración) y
+se anota aquí.
+
+**Pendiente de Feature 5:** la pasada mecánica completa del PACKET
+(tiempo en 4 fases vs. cálculo a mano, cambio de escala, etiquetas y
+resumen de IA) todavía no se ha hecho contra la base real, y la Feature 4
+aún no existe. Esta entrada cubre el requisito "al menos un bug real
+encontrado y arreglado, con redeploy". No sustituye el resto de la
+pasada.
