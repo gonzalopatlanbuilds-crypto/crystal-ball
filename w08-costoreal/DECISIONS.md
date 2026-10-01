@@ -575,6 +575,21 @@ cambió a "datos de prueba simulados", que es cierto para todas esas cifras.
 - `tsc`, eslint y build limpio.
 
 **Sin verificar:** la descarga real desde el navegador en producción.
-**No cubierto:** el borrador que se ve **en pantalla** sigue sin
-etiquetas por cifra. Copiar desde la pantalla tiene el mismo riesgo que
-el `.txt`; queda pendiente tu decisión.
+
+**Ampliado a la pantalla (decisión tuya):** copiar un párrafo directo de
+la pantalla tiene el mismo riesgo que copiarlo del `.txt`. El server
+action ahora devuelve el texto ya etiquetado (`etiquetarBorrador` en
+`lib/resumen.ts`). La pantalla y el `.txt` usan exactamente la misma
+función. Verificado con un borrador real de Haiku: 10/10 montos con
+etiqueta en pantalla, y el texto de pantalla aparece idéntico dentro del
+`.txt`. Build limpio. Sin ver todavía en el navegador.
+
+## 2026-09-30 — Feature 4 verificada en producción; `ANTHROPIC_API_KEY` en Vercel
+
+Confirmado por ti en producción, antes del etiquetado: "Generar borrador"
+produjo un borrador real con texto completo y aparecieron los botones
+"Generar otro borrador" y "Descargar resumen". No salió "El servicio de IA
+no está configurado", así que **`ANTHROPIC_API_KEY` está bien configurada
+en Vercel (Production)**. El asistente no lo verificó directamente: no
+tiene acceso a Vercel. La evidencia es el comportamiento de la app que
+reportaste.

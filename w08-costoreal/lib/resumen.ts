@@ -152,6 +152,18 @@ export async function redactarResumen(m: Modelo): Promise<ResultadoResumen> {
 const TAG_NO_CONFIRMADO = "NO CONFIRMADO: tarifa hipotética, ningún patrocinador ha aceptado";
 const TAG_SIN_VALIDAR = "SIN VALIDAR: datos de prueba simulados";
 
+// Persona test: un párrafo copiado de la pantalla o del .txt no debe
+// perder su advertencia. La pantalla y el .txt usan esta misma función.
+export function etiquetarBorrador(texto: string, m: Modelo): string {
+  const p = m.patrocinioPorCaso;
+  return etiquetarMontos(
+    texto,
+    [p.tarifaCentavos, p.ingresoCentavos, Math.abs(p.balanceCentavos), p.tarifaEquilibrioCentavos],
+    TAG_NO_CONFIRMADO,
+    TAG_SIN_VALIDAR
+  );
+}
+
 // Contenido del .txt descargable. Persona test: un fragmento copiado fuera
 // de contexto no debe perder su advertencia, así que (1) cada monto de la
 // prosa de la IA lleva su etiqueta pegada (etiquetarMontos) y (2) las
@@ -180,12 +192,7 @@ export function armarDescarga(texto: string, m: Modelo, generado: string): strin
     `Escala: ${casos} · Generado: ${generado}`,
     `Cada cifra lleva su etiqueta entre corchetes. No la quites al citarla.`,
     "",
-    etiquetarMontos(
-      texto,
-      [p.tarifaCentavos, p.ingresoCentavos, Math.abs(p.balanceCentavos), p.tarifaEquilibrioCentavos],
-      TAG_NO_CONFIRMADO,
-      TAG_SIN_VALIDAR
-    ),
+    etiquetarBorrador(texto, m),
     "",
     "CIFRAS DEL MODELO (cada línea se sostiene sola):",
     ...cifras,

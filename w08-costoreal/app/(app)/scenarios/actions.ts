@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { cargarModelo, leerParametros } from "@/lib/modelo";
-import { armarDescarga, redactarResumen } from "@/lib/resumen";
+import { armarDescarga, etiquetarBorrador, redactarResumen } from "@/lib/resumen";
 
 export type ResumenState =
   | { estado: "ok"; texto: string; casosMes: number; generado: string; descarga: string }
@@ -49,7 +49,9 @@ export async function generarResumen(
   const generado = new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" });
   return {
     estado: "ok",
-    texto: r.texto,
+    // En pantalla también va etiquetado: copiar un párrafo de aquí tiene
+    // el mismo riesgo que copiarlo del .txt.
+    texto: etiquetarBorrador(r.texto, resultado.modelo),
     casosMes: resultado.modelo.casosMes,
     generado,
     descarga: armarDescarga(r.texto, resultado.modelo, generado),
