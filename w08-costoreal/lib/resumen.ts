@@ -1,14 +1,16 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { CASE_TYPE_LABELS, type CaseType } from "@/lib/casos";
+import { CASE_TYPE_LABELS, SIMULADO_AVISO, type CaseType } from "@/lib/casos";
 import { formatoMxn } from "@/lib/costos";
 import type { Modelo } from "@/lib/escenarios";
 import {
+  AVISO_NINGUN_PATROCINADOR,
   ETIQUETA_PATROCINIO,
   ETIQUETA_SIN_PATROCINIO,
   ETIQUETA_VICTIMA_PAGA,
+  TITULO_BORRADOR,
 } from "@/lib/etiquetas";
-import { revisarBorrador } from "@/lib/guardia-resumen";
+import { etiquetarMontos, revisarBorrador } from "@/lib/guardia-resumen";
 
 // Haiku 4.5: decisión tuya (más barato, suficiente para un borrador corto
 // a partir de números ya calculados).
@@ -145,4 +147,51 @@ export async function redactarResumen(m: Modelo): Promise<ResultadoResumen> {
   }
 
   return { estado: "ok", texto };
+}
+
+const TAG_NO_CONFIRMADO = "NO CONFIRMADO: tarifa hipotética, ningún patrocinador ha aceptado";
+const TAG_SIN_VALIDAR = "SIN VALIDAR: datos de prueba simulados";
+
+// Contenido del .txt descargable. Persona test: un fragmento copiado fuera
+// de contexto no debe perder su advertencia, así que (1) cada monto de la
+// prosa de la IA lleva su etiqueta pegada (etiquetarMontos) y (2) las
+// cifras clave se repiten en líneas armadas en código, cada una con su
+// etiqueta y su supuesto completos — sin depender de cómo redactó la IA.
+export function armarDescarga(texto: string, m: Modelo, generado: string): string {
+  const p = m.patrocinioPorCaso;
+  const casos = `${m.casosMes.toLocaleString("es-MX")} casos/mes simulados`;
+  const balanceB =
+    p.balanceCentavos >= 0
+      ? `superávit hipotético de ${formatoMxn(p.balanceCentavos)}/mes`
+      : `déficit hipotético de ${formatoMxn(-p.balanceCentavos)}/mes`;
+
+  const cifras = [
+    `- Costo mensual proyectado [SIN VALIDAR: volumen simulado]: ${formatoMxn(m.costoMensualCentavos)} a ${casos}; costo por caso calculado del tiempo de personal registrado en ${m.casosRegistrados} caso(s) de prueba ficticios.`,
+    `- Escenario A, la víctima paga [NO CONFIRMADO: sin fuente de ingreso]: ingreso $0.00 MXN, déficit de ${formatoMxn(-m.victimaPaga.balanceCentavos)}/mes a ${casos}.`,
+    `- Escenario B [NO CONFIRMADO]: tarifa hipotética de ${formatoMxn(p.tarifaCentavos)} por caso que ningún patrocinador ha aceptado.`,
+    `- Escenario B [NO CONFIRMADO]: ingreso hipotético de ${formatoMxn(p.ingresoCentavos)}/mes a ${casos}, basado en una tarifa de ${formatoMxn(p.tarifaCentavos)}/caso que ningún patrocinador ha aceptado.`,
+    `- Escenario B [NO CONFIRMADO]: ${balanceB} a ${casos}, basado en una tarifa de ${formatoMxn(p.tarifaCentavos)}/caso que ningún patrocinador ha aceptado.`,
+    `- Escenario B [NO CONFIRMADO]: una tarifa de ${formatoMxn(p.tarifaEquilibrioCentavos)}/caso cubriría el costo a ${casos}; ningún patrocinador ha aceptado pagarla.`,
+    `- Escenario C, sin patrocinador [cálculo directo del tiempo registrado; volumen simulado]: déficit de ${formatoMxn(m.sinPatrocinio.deficitCentavos)}/mes a ${casos}.`,
+  ];
+
+  return [
+    TITULO_BORRADOR.toUpperCase(),
+    `Escala: ${casos} · Generado: ${generado}`,
+    `Cada cifra lleva su etiqueta entre corchetes. No la quites al citarla.`,
+    "",
+    etiquetarMontos(
+      texto,
+      [p.tarifaCentavos, p.ingresoCentavos, Math.abs(p.balanceCentavos), p.tarifaEquilibrioCentavos],
+      TAG_NO_CONFIRMADO,
+      TAG_SIN_VALIDAR
+    ),
+    "",
+    "CIFRAS DEL MODELO (cada línea se sostiene sola):",
+    ...cifras,
+    "",
+    "---",
+    `${AVISO_NINGUN_PATROCINADOR} ${SIMULADO_AVISO}`,
+    "Este borrador no representa una alianza ni una oferta. Revísalo contra la pantalla de CostoReal antes de compartirlo.",
+  ].join("\n");
 }

@@ -2,24 +2,11 @@
 
 import { useActionState } from "react";
 import { generarResumen, type ResumenState } from "@/app/(app)/scenarios/actions";
-import { AVISO_NINGUN_PATROCINADOR } from "@/lib/etiquetas";
-import { SIMULADO_AVISO } from "@/lib/casos";
+import { TITULO_BORRADOR as TITULO } from "@/lib/etiquetas";
 
-// La etiqueta va fuera del texto de la IA, en la UI y en el archivo
-// descargado: así aparece siempre, aunque el modelo la omita.
-const TITULO = "Resumen para posible patrocinador — generado por IA, borrador sin validar";
-
-function descargar(texto: string, casosMes: number, generado: string) {
-  const contenido = [
-    TITULO.toUpperCase(),
-    `Escala: ${casosMes.toLocaleString("es-MX")} casos/mes · Generado: ${generado}`,
-    "",
-    texto,
-    "",
-    "---",
-    `${AVISO_NINGUN_PATROCINADOR} ${SIMULADO_AVISO}`,
-    "Este borrador no representa una alianza ni una oferta. Revísalo contra la pantalla de CostoReal antes de compartirlo.",
-  ].join("\n");
+// El contenido del .txt lo arma el servidor (armarDescarga): cada cifra
+// lleva su etiqueta pegada para que no se pierda al copiar un fragmento.
+function descargar(contenido: string, casosMes: number) {
   const url = URL.createObjectURL(new Blob([contenido], { type: "text/plain;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
@@ -85,7 +72,7 @@ export default function SponsorSummary({ escala, tarifa }: { escala: number; tar
         {state?.estado === "ok" && (
           <button
             type="button"
-            onClick={() => descargar(state.texto, state.casosMes, state.generado)}
+            onClick={() => descargar(state.descarga, state.casosMes)}
             className="rounded-lg border border-sky-800 bg-white px-4 py-2 text-sm text-sky-900 hover:bg-sky-100"
           >
             Descargar resumen

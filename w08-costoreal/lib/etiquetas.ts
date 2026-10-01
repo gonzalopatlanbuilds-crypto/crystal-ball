@@ -17,3 +17,7 @@ export const ETIQUETA_SIN_PATROCINIO =
 
 export const AVISO_NINGUN_PATROCINADOR =
   "Ningún patrocinador ha sido contactado ni ha confirmado este modelo. Datos de volumen simulados.";
+
+// La pone la UI y el .txt, nunca el modelo: así aparece siempre.
+export const TITULO_BORRADOR =
+  "Resumen para posible patrocinador — generado por IA, borrador sin validar";

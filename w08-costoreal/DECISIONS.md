@@ -529,3 +529,52 @@ borrador, y el error contrario dejaría pasar una afirmación.
   configurado" y el log dice `falta ANTHROPIC_API_KEY`.
 - Que un borrador con los datos reales de tu org pase la guardia: la
   prueba usó un modelo de ejemplo con 2 casos.
+
+## 2026-09-30 — Persona test: la cifra del Escenario B se puede circular sin su etiqueta
+
+**Hallazgo (tu persona test: directora de asociación civil escéptica,
+recorriendo panel, escenarios y borrador de IA).** Fue el más grave: el
+`.txt` descargable se puede separar de su contexto. Alguien copia solo el
+párrafo del superávit del Escenario B (en tu org, $20,766) y lo circula
+sin las etiquetas de "no confirmado" que en pantalla rodean esa cifra. La
+advertencia viajaba con el documento, no con el número.
+
+**Arreglo (en código, no en el prompt):**
+1. **Cada monto de la prosa de la IA lleva su etiqueta pegada**
+   (`etiquetarMontos` en `lib/guardia-resumen.ts`):
+   - los que dependen de la tarifa hipotética (tarifa, ingreso, superávit
+     o déficit de B, tarifa de equilibrio) llevan
+     `[NO CONFIRMADO: tarifa hipotética, ningún patrocinador ha aceptado]`;
+   - todos los demás llevan `[SIN VALIDAR: datos de prueba simulados]`.
+
+   No se adivina el escenario por contexto, porque el déficit de A y el de
+   C son la misma cifra. Si un valor coincide con uno de B, gana la
+   etiqueta más fuerte.
+2. **Bloque "CIFRAS DEL MODELO"** armado en código desde el modelo
+   (`armarDescarga` en `lib/resumen.ts`): 7 líneas, cada una se sostiene
+   sola, con su etiqueta, la escala simulada y el supuesto completo. Ej.:
+   "Escenario B [NO CONFIRMADO]: superávit hipotético de $X MXN/mes a 100
+   casos/mes simulados, basado en una tarifa de $300.00 MXN/caso que
+   ningún patrocinador ha aceptado."
+3. El `.txt` lo arma el servidor; el cliente solo lo descarga. El título
+   del borrador pasó a `lib/etiquetas.ts` (fuente única de etiquetas), para
+   que la UI y el `.txt` usen la misma cadena.
+
+**Corrección durante la prueba:** la primera versión etiquetaba todo lo
+que no era de B como "SIN VALIDAR: volumen simulado". Eso es falso para el
+costo por caso, que no depende del volumen (sale de casos de prueba). Se
+cambió a "datos de prueba simulados", que es cierto para todas esas cifras.
+
+**Verificado:**
+- 3/3 pruebas unitarias del etiquetado.
+- 1 borrador real de Haiku convertido en `.txt`: los 14 montos de la prosa
+  tienen etiqueta pegada, las 7 líneas de cifras tienen etiqueta, y el
+  superávit de B lleva NO CONFIRMADO. Un borrador anterior en esa misma
+  prueba fue rechazado por la guardia ("potenciales aliados"), que es el
+  comportamiento correcto.
+- `tsc`, eslint y build limpio.
+
+**Sin verificar:** la descarga real desde el navegador en producción.
+**No cubierto:** el borrador que se ve **en pantalla** sigue sin
+etiquetas por cifra. Copiar desde la pantalla tiene el mismo riesgo que
+el `.txt`; queda pendiente tu decisión.

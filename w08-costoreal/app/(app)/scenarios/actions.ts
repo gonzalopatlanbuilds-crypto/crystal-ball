@@ -3,10 +3,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { cargarModelo, leerParametros } from "@/lib/modelo";
-import { redactarResumen } from "@/lib/resumen";
+import { armarDescarga, redactarResumen } from "@/lib/resumen";
 
 export type ResumenState =
-  | { estado: "ok"; texto: string; casosMes: number; generado: string }
+  | { estado: "ok"; texto: string; casosMes: number; generado: string; descarga: string }
   | { estado: "rechazado"; problemas: string[] }
   | { estado: "error"; mensaje: string }
   | undefined;
@@ -46,10 +46,12 @@ export async function generarResumen(
   const r = await redactarResumen(resultado.modelo);
   if (r.estado !== "ok") return r;
 
+  const generado = new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" });
   return {
     estado: "ok",
     texto: r.texto,
     casosMes: resultado.modelo.casosMes,
-    generado: new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+    generado,
+    descarga: armarDescarga(r.texto, resultado.modelo, generado),
   };
 }

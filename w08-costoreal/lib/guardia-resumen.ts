@@ -74,6 +74,29 @@ export function montosEnTexto(texto: string): number[] {
   return montos;
 }
 
+// Persona test: alguien puede copiar solo el párrafo del superávit del
+// Escenario B y circularlo sin las etiquetas que lo rodean en pantalla.
+// Para el .txt descargable, cada monto lleva su etiqueta pegada: los que
+// dependen de la tarifa hipotética, "NO CONFIRMADO"; todos los demás,
+// "SIN VALIDAR". No se intenta adivinar a qué escenario pertenece un monto
+// por contexto: el déficit de A y el de C son la misma cifra. Si un valor
+// coincide con uno no confirmado, gana la etiqueta más fuerte.
+export function etiquetarMontos(
+  texto: string,
+  noConfirmadosCentavos: number[],
+  etiquetaNoConfirmado: string,
+  etiquetaResto: string
+): string {
+  const noConfirmados = new Set(noConfirmadosCentavos);
+  return texto.replace(
+    /\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?: MXN)?(?:\/(?:mes|caso))?/g,
+    (monto) => {
+      const [centavos] = montosEnTexto(monto);
+      return `${monto} [${noConfirmados.has(centavos) ? etiquetaNoConfirmado : etiquetaResto}]`;
+    }
+  );
+}
+
 function formatoCentavos(c: number): string {
   return `$${(c / 100).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
