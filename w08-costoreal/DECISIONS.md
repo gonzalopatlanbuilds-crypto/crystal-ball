@@ -593,3 +593,24 @@ no está configurado", así que **`ANTHROPIC_API_KEY` está bien configurada
 en Vercel (Production)**. El asistente no lo verificó directamente: no
 tiene acceso a Vercel. La evidencia es el comportamiento de la app que
 reportaste.
+
+## 2026-09-30 — Cierre: Feature 5 y arreglo del persona test
+
+Confirmado por ti en producción con el deploy de `b0d8086`:
+- El `.txt` descargado trae la etiqueta pegada a cada cifra.
+- El bloque "CIFRAS DEL MODELO" funciona como se diseñó.
+- Está presente el aviso final de revisar contra la pantalla de CostoReal.
+
+**Nota de precisión:** tu confirmación habla del `.txt`. Las etiquetas del
+borrador **en pantalla** salen de la misma función (`etiquetarBorrador`) y
+se verificaron con node (10/10 montos etiquetados, texto idéntico al del
+`.txt`). No se mencionaron explícitamente en la revisión en producción.
+
+**Estado final de w08-costoreal:**
+- Features 1–5 completas y desplegadas.
+- Bugs reales encontrados y arreglados en F5:
+  1. Login con Google fallaba al primer clic.
+  2. `anon` podía ejecutar `create_org()`.
+  3. Colores de tarjeta de escenarios invertidos.
+- Hallazgo del persona test: cifras del borrador circulables sin su
+  etiqueta. Arreglado en `.txt` y en pantalla.
