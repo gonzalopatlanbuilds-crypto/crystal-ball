@@ -455,3 +455,77 @@ en la misma página: naranja si `false`, verde si `true`.
 **Verificado:** `rm -rf .next && npm run build` limpio, y eslint sin
 errores en la página. **Sin verificar:** cómo se ve en el navegador
 (local o producción); falta revisarlo en pantalla después del deploy.
+
+## 2026-09-30 — Feature 4: resumen para posible patrocinador (borrador de IA)
+
+**Decisiones tuyas:** modelo **Claude Haiku 4.5** (`claude-haiku-4-5`,
+más barato y suficiente para un borrador corto a partir de números ya
+calculados). El borrador **no se guarda**: no hay tabla nueva ni cambio en
+`sql/schema.sql`. Vive en el estado de la pantalla y se puede descargar
+como `.txt`.
+
+**Cómo funciona:**
+- En `/scenarios`, el botón "Generar borrador" llama al server action
+  `generarResumen` (`app/(app)/scenarios/actions.ts`). Del navegador solo
+  llegan escala y tarifa hipotética, y se validan con las mismas reglas que
+  la URL (`leerParametros`). Los números se recalculan en el servidor con
+  `cargarModelo`, con la sesión de quien pide (RLS de su org). La IA nunca
+  recibe cifras enviadas por el cliente.
+- `lib/resumen.ts` arma una hoja de datos en texto, con cifras ya
+  formateadas y las etiquetas de `lib/etiquetas.ts`, y la manda a Haiku con
+  un system prompt de 7 reglas: solo cifras de la hoja, ninguna alianza,
+  tarifa ≠ costo, "no confirmado" solo para A y B, volumen simulado, casos
+  de prueba no son datos reales, sin títulos y sin markdown. Ningún texto
+  libre de usuarios entra al prompt: los tipos de caso son etiquetas
+  fijas, así que no hay superficie de inyección de prompt.
+- **Guardia automática** (`lib/guardia-resumen.ts`, sin imports, probada
+  con node). Si el borrador falla, **no se muestra**: se ven los motivos
+  y se registra completo en el log del servidor. Revisa:
+  - palabras siempre prohibidas: socio, aliado, convenio, firmado,
+    garantiza, comprometido, respaldado, "en colaboración con", "nuestro
+    patrocinador";
+  - palabras permitidas solo si van negadas en la misma cláusula:
+    confirmado, alianza, aceptó, acuerdo, "datos/operación/casos reales";
+  - "tarifa" y "calculada" en la misma oración;
+  - **cualquier monto en `$` que no esté en la hoja de datos**: la IA
+    redacta, no calcula.
+- `limpiarFormato` quita los títulos markdown en código, porque el prompt
+  solo no bastó.
+- La etiqueta "generado por IA, borrador sin validar" la pone la UI, fuera
+  del texto del modelo. Igual en el `.txt` descargado, junto con el aviso
+  de que ningún patrocinador ha sido contactado. Así aparece siempre,
+  aunque el modelo la omita.
+- El componente lleva `key={escala-tarifa}`: si cambias escala o tarifa,
+  el borrador anterior desaparece y nunca queda un resumen de otros
+  números en pantalla.
+- Errores de la API (rate limit, llave inválida, conexión) y
+  `stop_reason` distinto de `end_turn` muestran un mensaje en español, no
+  el texto parcial. Timeout de 30 s y 1 reintento.
+
+**Prueba real contra Haiku (3 rondas × 9 llamadas, escalas 10/100/1,000,
+mismo código que producción, modelo calculado con `calcularModelo`):**
+
+| Ronda | Pasaron guardia | Problemas reales encontrados al leerlos | Arreglo |
+|---|---|---|---|
+| 1 | 7/9 | 2/9 decían "la tarifa hipotética, **calculada a partir del tiempo registrado**" (vuelve un supuesto un hecho); 8/9 con título markdown | regla 3 del prompt (tarifa ≠ costo) + regla de guardia tarifa/calculada; `limpiarFormato` |
+| 2 | 6/9 | 2/9 llamaban "**no confirmado**" al déficit sin patrocinador (contradice la pantalla, donde C es "Confirmado"); falso positivo "sin una fuente de patrocinio confirmada" (negación a 5 palabras); 1 decía "fundamentado en **datos reales de operación**" | regla 4 reescrita (C = cálculo directo); negación por cláusula, hasta 6 palabras; regla 5 + guardia "datos reales" |
+| 3 | **9/9** | Ninguno engañoso. Residual: gramática rara al pegar la etiqueta ("Estas cifras no confirmado de patrocinio…", "no confirmado que ningún patrocinador haya aceptado") | no se arregla: no exagera nada |
+
+Costo de las 27 llamadas: centavos (Haiku, ~1.5k tokens cada una).
+
+**Falso positivo conocido, aceptado:** "No existe compromiso, acuerdo ni
+respaldo" se rechaza, porque la coma corta la cláusula y "acuerdo" queda
+sin negación. Se prefiere rechazar de más: el costo es generar otro
+borrador, y el error contrario dejaría pasar una afirmación.
+
+**Verificado:** 27/27 pruebas de guardia con node, 4/4 de `limpiarFormato`,
+`tsc`, eslint y `rm -rf .next && npm run build` limpio.
+
+**Sin verificar todavía:**
+- La UI en el navegador (botón, estados de carga/error/rechazo, descarga
+  del `.txt`) — ni en local ni en producción.
+- **Vercel necesita `ANTHROPIC_API_KEY`** en Environment Variables
+  (Production). Si falta, la pantalla muestra "El servicio de IA no está
+  configurado" y el log dice `falta ANTHROPIC_API_KEY`.
+- Que un borrador con los datos reales de tu org pase la guardia: la
+  prueba usó un modelo de ejemplo con 2 casos.

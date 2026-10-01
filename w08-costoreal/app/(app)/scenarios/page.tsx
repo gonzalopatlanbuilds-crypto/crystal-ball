@@ -9,6 +9,7 @@ import {
   ETIQUETA_VICTIMA_PAGA,
 } from "@/lib/etiquetas";
 import { cargarModelo, leerParametros, TARIFA_PATROCINIO_MAX_MXN } from "@/lib/modelo";
+import SponsorSummary from "@/components/SponsorSummary";
 
 function balance(centavos: number): string {
   if (centavos === 0) return "Equilibrio exacto: $0.00 MXN/mes";
@@ -200,6 +201,14 @@ export default async function ScenariosPage({ searchParams }: PageProps<"/scenar
                   </p>
                 </section>
               </div>
+
+              {/* key: al cambiar escala o tarifa se descarta el borrador
+                  anterior, para que nunca quede un resumen de otros números. */}
+              <SponsorSummary
+                key={`${escala}-${tarifaPatrocinioMxn}`}
+                escala={escala}
+                tarifa={tarifaPatrocinioMxn}
+              />
             </>
           );
         })()}
