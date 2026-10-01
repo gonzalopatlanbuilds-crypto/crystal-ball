@@ -614,3 +614,33 @@ se verificaron con node (10/10 montos etiquetados, texto idéntico al del
   3. Colores de tarjeta de escenarios invertidos.
 - Hallazgo del persona test: cifras del borrador circulables sin su
   etiqueta. Arreglado en `.txt` y en pantalla.
+
+## 2026-09-30 — Estado final del proyecto (cierre de sesión)
+
+| Feature | Estado |
+|---|---|
+| F1 — Auth con Google + panel + volumen de casos sembrado | ✅ completa, verificada en producción |
+| F2 — Registro de tiempo por caso + costo real por caso | ✅ completa, verificada en producción |
+| F3 — Comparación de 3 escenarios de financiamiento con etiquetas confirmado/no confirmado | ✅ completa, verificada en producción |
+| F4 — Borrador de resumen para posible patrocinador (Claude Haiku 4.5, guardia automática, etiqueta por cifra) | ✅ completa, verificada en producción |
+| F5 — Prueba mecánica + persona test, bugs encontrados y arreglados | ✅ cerrada |
+
+**Bugs reales de F5 (cada uno con su sección arriba):**
+1. **Login con Google regresaba a `/login` al primer clic.** Arreglado en
+   `8d1a5c0` y confirmado en producción. La causa raíz no se confirmó con
+   logs.
+2. **`anon` podía ejecutar `create_org()`.** Arreglado en `02cdb37` y
+   verificado desde afuera con la anon key: las 5 funciones responden
+   `permission denied`.
+3. **Colores de tarjeta de escenarios invertidos respecto a su etiqueta.**
+   Arreglado en `b454728` y `f2b9ec6`. Regla sin excepciones: el color
+   sigue la etiqueta. Confirmado en producción.
+
+**Persona test (directora de asociación civil escéptica):** el hallazgo
+más grave fue que una cifra del borrador, por ejemplo el superávit del
+Escenario B, se podía circular sin su etiqueta. Se arregló con una
+etiqueta pegada a cada monto, en el `.txt` (`9ee8635`) y en pantalla
+(`b0d8086`), más el bloque "CIFRAS DEL MODELO". **Cerrado**: el `.txt`
+quedó confirmado en producción.
+
+**Pendiente — único:** grabar el demo video. No queda código por hacer.
