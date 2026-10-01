@@ -446,10 +446,11 @@ la tarjeta sigue la etiqueta de confirmación, no si el resultado es bueno
 o malo. Por eso C se ve verde aunque muestre un déficit: lo que está
 confirmado es el cálculo, no que el resultado sea favorable.
 
-**No cambiado:** el Escenario A sigue en gris neutro, aunque es "No
-confirmado". Su etiqueta ya sale en naranja; queda pendiente que decidas
-si la tarjeta también debe ir en naranja para que la regla sea
-uniforme.
+**Escenario A también (decisión tuya):** la regla aplica a los tres sin
+excepciones. La tarjeta de A deja el gris neutro y pasa a naranja, porque
+es "No confirmado". Para que no vuelva a divergir, el borde y el fondo de
+las tres tarjetas ahora salen de una sola función `claseTarjeta(confirmado)`
+en la misma página: naranja si `false`, verde si `true`.
 
 **Verificado:** `rm -rf .next && npm run build` limpio, y eslint sin
 errores en la página. **Sin verificar:** cómo se ve en el navegador

@@ -17,6 +17,14 @@ function balance(centavos: number): string {
     : `Superávit de ${formatoMxn(centavos)}/mes`;
 }
 
+// El color de la tarjeta sigue la etiqueta de confirmación, sin
+// excepciones: naranja = No confirmado, verde = Confirmado.
+function claseTarjeta(confirmado: boolean): string {
+  return `rounded-xl border px-5 py-4 ${
+    confirmado ? "border-lime-600 bg-lime-50" : "border-amber-500 bg-orange-50"
+  }`;
+}
+
 function Etiqueta({ confirmado, texto }: { confirmado: boolean; texto: string }) {
   return (
     <p className={`mt-2 font-semibold ${confirmado ? "text-emerald-900" : "text-orange-700"}`}>
@@ -127,16 +135,16 @@ export default async function ScenariosPage({ searchParams }: PageProps<"/scenar
               </p>
 
               <div className="mt-6 space-y-4">
-                <section className="rounded-xl border border-zinc-400 bg-stone-100 px-5 py-4">
-                  <h2 className="font-semibold text-zinc-900">Escenario A — Víctima paga</h2>
-                  <p className="mt-1 text-zinc-600">
+                <section className={claseTarjeta(false)}>
+                  <h2 className="font-semibold text-amber-950">Escenario A — Víctima paga</h2>
+                  <p className="mt-1 text-amber-900">
                     Ingreso $0 — el servicio se declara gratuito para la
                     víctima por Condición 4. {balance(m.victimaPaga.balanceCentavos)}.
                   </p>
                   <Etiqueta confirmado={false} texto={ETIQUETA_VICTIMA_PAGA} />
                 </section>
 
-                <section className="rounded-xl border border-amber-500 bg-orange-50 px-5 py-4">
+                <section className={claseTarjeta(false)}>
                   <h2 className="font-semibold text-amber-950">
                     Escenario B — Patrocinador paga por caso (tipo IDCARE)
                   </h2>
@@ -177,7 +185,7 @@ export default async function ScenariosPage({ searchParams }: PageProps<"/scenar
                   </form>
                 </section>
 
-                <section className="rounded-xl border border-lime-600 bg-lime-50 px-5 py-4">
+                <section className={claseTarjeta(true)}>
                   <h2 className="font-semibold text-lime-950">Escenario C — Sin patrocinador</h2>
                   <p className="mt-1 text-lime-950">
                     Déficit de {formatoMxn(m.sinPatrocinio.deficitCentavos)}/mes a{" "}
