@@ -136,17 +136,17 @@ export default async function ScenariosPage({ searchParams }: PageProps<"/scenar
                   <Etiqueta confirmado={false} texto={ETIQUETA_VICTIMA_PAGA} />
                 </section>
 
-                <section className="rounded-xl border border-lime-600 bg-lime-50 px-5 py-4">
-                  <h2 className="font-semibold text-lime-950">
+                <section className="rounded-xl border border-amber-500 bg-orange-50 px-5 py-4">
+                  <h2 className="font-semibold text-amber-950">
                     Escenario B — Patrocinador paga por caso (tipo IDCARE)
                   </h2>
-                  <p className="mt-1 text-lime-900">
+                  <p className="mt-1 text-amber-900">
                     Tarifa hipotética de {formatoMxn(m.patrocinioPorCaso.tarifaCentavos)} por
                     caso × {m.casosMes.toLocaleString("es-MX")} casos ={" "}
                     {formatoMxn(m.patrocinioPorCaso.ingresoCentavos)}/mes.{" "}
                     {balance(m.patrocinioPorCaso.balanceCentavos)}.
                   </p>
-                  <p className="mt-1 text-sm text-lime-900">
+                  <p className="mt-1 text-sm text-amber-900">
                     Punto de equilibrio: {formatoMxn(m.patrocinioPorCaso.tarifaEquilibrioCentavos)} por
                     caso cubriría el costo a esta escala.
                   </p>
@@ -154,38 +154,38 @@ export default async function ScenariosPage({ searchParams }: PageProps<"/scenar
 
                   <form method="get" action="/scenarios" className="mt-3 flex flex-wrap items-end gap-2">
                     <input type="hidden" name="escala" value={escala} />
-                    <label className="text-xs text-lime-950" htmlFor="tarifa">
+                    <label className="text-xs text-amber-950" htmlFor="tarifa">
                       Probar otra tarifa hipotética (MXN por caso)
                       <input
                         id="tarifa"
                         name="tarifa"
                         inputMode="decimal"
                         defaultValue={tarifaPatrocinioMxn}
-                        className="mt-1 block w-32 rounded-lg border border-lime-600 bg-white px-3 py-1.5 text-sm"
+                        className="mt-1 block w-32 rounded-lg border border-amber-500 bg-white px-3 py-1.5 text-sm"
                       />
                     </label>
                     <button
                       type="submit"
-                      className="rounded-lg border border-lime-700 bg-white px-3 py-1.5 text-sm text-lime-950 hover:bg-lime-100"
+                      className="rounded-lg border border-amber-600 bg-white px-3 py-1.5 text-sm text-amber-950 hover:bg-orange-100"
                     >
                       Recalcular
                     </button>
-                    <span className="w-full text-xs text-lime-900">
+                    <span className="w-full text-xs text-amber-900">
                       Mayor a $0 y hasta ${TARIFA_PATROCINIO_MAX_MXN.toLocaleString("es-MX")}. Cambiar
                       esta cifra no la vuelve más real: sigue sin confirmar.
                     </span>
                   </form>
                 </section>
 
-                <section className="rounded-xl border border-amber-500 bg-orange-50 px-5 py-4">
-                  <h2 className="font-semibold text-amber-950">Escenario C — Sin patrocinador</h2>
-                  <p className="mt-1 text-amber-950">
+                <section className="rounded-xl border border-lime-600 bg-lime-50 px-5 py-4">
+                  <h2 className="font-semibold text-lime-950">Escenario C — Sin patrocinador</h2>
+                  <p className="mt-1 text-lime-950">
                     Déficit de {formatoMxn(m.sinPatrocinio.deficitCentavos)}/mes a{" "}
                     {m.casosMes.toLocaleString("es-MX")} casos (costo total − $0 de
                     ingreso) — insostenible sin financiamiento externo.
                   </p>
                   <Etiqueta confirmado texto={ETIQUETA_SIN_PATROCINIO} />
-                  <p className="mt-1 text-xs text-amber-900">
+                  <p className="mt-1 text-xs text-lime-900">
                     Lo confirmado es el costo por caso (tiempo registrado). El
                     volumen de {m.casosMes.toLocaleString("es-MX")} casos/mes es simulado
                     {m.usaPromedioGeneral && ", y algún tipo de caso usa el promedio general"}.

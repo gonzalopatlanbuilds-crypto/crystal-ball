@@ -422,3 +422,35 @@ ha visto en pantalla.
 **Decisión (tuya):** se queda el error de permiso para `anon` en vez de
 `[]`. No se agrega `to authenticated` a las policies, porque la app nunca
 consulta esas tablas sin sesión.
+
+## 2026-09-30 — Feature 5: tercer bug real — colores de tarjeta B/C invertidos
+
+**Encontrado por ti** en `/scenarios`: la tarjeta del Escenario B
+(patrocinador paga) se veía verde y la del C (sin patrocinador) naranja.
+Visualmente, B parecía "lo bueno/confirmado" y C "lo dudoso", que es
+justo lo contrario de lo que dicen sus etiquetas.
+
+**Causa:** las *etiquetas* ya estaban bien (`lib/etiquetas.ts`: B "No
+confirmado", C "Confirmado"; el texto de la etiqueta ya salía naranja en B
+y verde en C). Lo que estaba invertido era el color de la *tarjeta*, que
+se copió tal cual del mockup (`assets/w8-mockup-funding-scenarios.png`),
+y el mockup tiene la misma contradicción: tarjeta verde con etiqueta
+naranja "No confirmado", tarjeta naranja con etiqueta verde
+"Confirmado". En la Feature 3 no se detectó porque se revisó el texto y
+la matemática, no la coherencia color-etiqueta.
+
+**Arreglo:** en `app/(app)/scenarios/page.tsx` se cambiaron las paletas
+de B y C. B queda con borde y fondo ámbar/naranja (también el campo y el
+botón de "Probar otra tarifa"); C queda verde (lime). Regla: el color de
+la tarjeta sigue la etiqueta de confirmación, no si el resultado es bueno
+o malo. Por eso C se ve verde aunque muestre un déficit: lo que está
+confirmado es el cálculo, no que el resultado sea favorable.
+
+**No cambiado:** el Escenario A sigue en gris neutro, aunque es "No
+confirmado". Su etiqueta ya sale en naranja; queda pendiente que decidas
+si la tarjeta también debe ir en naranja para que la regla sea
+uniforme.
+
+**Verificado:** `rm -rf .next && npm run build` limpio, y eslint sin
+errores en la página. **Sin verificar:** cómo se ve en el navegador
+(local o producción); falta revisarlo en pantalla después del deploy.
