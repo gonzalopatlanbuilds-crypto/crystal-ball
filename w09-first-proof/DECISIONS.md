@@ -153,6 +153,9 @@ alias de producción ahí también.
   `/auth/v1/authorize` redirige a Google con
   `redirect_uri=https://vzrjpntpglybinaptogi.supabase.co/auth/v1/callback`.
 
-**NO verificado todavía:** login con Google al primer clic en incógnito
-en producción (prueba tuya). Es lo único que confirma que Google Cloud
-tiene autorizado el redirect URI de Supabase.
+**Login con Google al primer clic, en incógnito, en producción:
+verificado por ti** (2026-10-11). Con eso queda confirmado también el
+redirect URI de Supabase en Google Cloud. **Deploy 1 cerrado.** Pendiente
+menor: Site URL de Supabase todavía en localhost.
+
+**Siguiente paso:** Feature 2 (entrega del candidato y chequeo automático).
