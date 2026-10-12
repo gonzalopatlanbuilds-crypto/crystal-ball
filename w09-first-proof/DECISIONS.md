@@ -306,3 +306,22 @@ lista, como los ordena el dashboard).
 **Ahora es obligatorio antes de desplegar este commit:** las dos pantallas
 piden `attempt_number`, y sin la columna la consulta falla (`/entregas/[id]`
 daría 404 y la lista de entregas saldría vacía).
+
+## 2026-10-11 — Intentos verificados en producción
+
+**Verificado por ti, con tu cuenta real en
+`https://crystal-ball-w09-first-proof.vercel.app`** (después de re-correr
+`sql/schema.sql` en Supabase y desplegar f89b0b2):
+- Dos entregas: **A-01** sin etiqueta de intento y **A-02** con
+  "Intento 2: reenvío", tanto en "Tus entregas" como en su pantalla.
+- Ninguna muestra nombre: solo el seudónimo.
+
+Antes del push se confirmó desde fuera, con la llave pública, que
+producción ya tenía `submissions.attempt_number` y
+`profiles.next_attempt` (200 en ambas; una columna inventada da 400
+"does not exist").
+
+**No verificado en producción todavía:** que quien revisa no vea el
+intento. La pantalla del revisor no existe aún (Feature 4); por ahora
+solo está probado en `test:schema` que las funciones `blind_*` no lo
+devuelven.
