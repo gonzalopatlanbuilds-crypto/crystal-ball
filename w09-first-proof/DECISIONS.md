@@ -666,3 +666,22 @@ cuenta a `ZZH-TDH` y borrar la org vacía `QJM-KMW` (sin entregas ni
 revisiones, verificado con lectura) lo bloquearon los permisos de esta
 sesión por ser datos compartidos de producción. Quedó como paso tuyo en
 el SQL Editor.
+
+## 2026-10-11 — Revisión ciega verificada en producción
+
+**Hecho por ti:** corriste el SQL (segunda cuenta movida a `ZZH-TDH`, org
+vacía `QJM-KMW` borrada), entraste con la segunda cuenta (selector de
+cuentas funcionando), revisaste A-01 y viste el expediente revisado con
+tu cuenta principal; reportaste "todo hecho y correcto".
+
+**Verificado por mí en la base (solo lectura, service role):** una sola
+org (`ZZH-TDH`, 2 miembros); A-01 (intento 1) `reviewed`, con una
+revisión cuyo revisor **no** es el candidato, recomendación "conversar",
+conflicto "Ninguno", firmada 2026-10-12 04:02 UTC; A-02 y A-03 (reenvíos)
+siguen `pending_review` y fuera de la cola, como se diseñó. A-01 no tiene
+observaciones de IA (se envió antes de la Feature 3), así que esta
+revisión no ejercitó confirmar/descartar en producción; eso está cubierto
+en `test:schema` y `test:logica`.
+
+**Sigue sin probar en producción:** el botón "Solicitar eliminación de mi
+expediente" (borra todo; probado en `test:schema`).
