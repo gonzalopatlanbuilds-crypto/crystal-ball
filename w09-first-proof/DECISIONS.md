@@ -272,3 +272,37 @@ pantalla del candidato: solo se guarda.
 **Pendiente tuyo:** volver a correr `sql/schema.sql` completo en Supabase
 (SQL Editor) para que producción tenga la columna. Sin eso, la app actual
 sigue funcionando: no lee ni escribe `attempt_number`.
+
+## 2026-10-11 — Intento visible para el candidato; la evidencia es el intento 1
+
+**Los 4 envíos de prueba de la migración (A, B, A, A)** se crearon en
+una base PGlite **en memoria**, dentro de un script en el scratchpad de
+la sesión; desapareció al terminar el proceso. Nunca tocaron Supabase (el
+script no tenía URL ni llave). No hay nada que borrar en producción.
+
+**Qué cambió:**
+- `lib/intentos.ts`: `etiquetaIntento()` (el intento 1 no lleva
+  etiqueta; los demás dicen "Intento N: reenvío") y `elegirEvidencia()`.
+- `/entregas/[id]` y "Tus entregas" en `/dashboard` muestran la etiqueta.
+  Solo vistas del candidato (RLS: filas propias). Quien revisa nunca la ve:
+  `blind_pending_submissions()` / `blind_submission()` no devuelven
+  `attempt_number` (probado en `test:schema`).
+
+**La evidencia es el intento 1** (`elegirEvidencia`): la única entrega
+hecha antes de ver los valores correctos. Todavía no se usa en pantalla;
+la usará el expediente (Feature 4).
+
+**Decisión mía, reversible: si el intento 1 se borró, no hay evidencia
+(null)**, en vez de promover el intento 2. Si no, borrar el primero sería
+la forma de "mejorar" el expediente después de ver las respuestas. Si
+prefieres que el intento más bajo que exista sea la evidencia, es un
+cambio de una línea.
+
+**Pruebas:** `test:logica` con 7 checks nuevos (incluye "devuelve el
+intento 1 aunque existan el 2 y el 3", con los reenvíos primero en la
+lista, como los ordena el dashboard).
+
+**Sigue pendiente tuyo:** re-correr `sql/schema.sql` en Supabase.
+**Ahora es obligatorio antes de desplegar este commit:** las dos pantallas
+piden `attempt_number`, y sin la columna la consulta falla (`/entregas/[id]`
+daría 404 y la lista de entregas saldría vacía).

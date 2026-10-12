@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { chequear } from "@/lib/caso";
+import { etiquetaIntento } from "@/lib/intentos";
 import ChequeoCalculos from "@/components/ChequeoCalculos";
 
 interface Entrega {
   id: string;
   pseudonym: string;
+  attempt_number: number;
   answer_growth: number | string | null;
   answer_margin: number | string | null;
   answer_dso: number | string | null;
@@ -24,12 +26,14 @@ export default async function EntregaPage({ params }: PageProps<"/entregas/[id]"
   const supabase = await createClient();
   const { data: entrega, error } = await supabase
     .from("submissions")
-    .select("id, pseudonym, answer_growth, answer_margin, answer_dso, explanation, status")
+    .select("id, pseudonym, attempt_number, answer_growth, answer_margin, answer_dso, explanation, status")
     .eq("id", id)
     .maybeSingle<Entrega>();
 
   if (error) console.error("EntregaPage: no se pudo leer la entrega", error);
   if (!entrega) notFound();
+
+  const intento = etiquetaIntento(entrega.attempt_number);
 
   const resultados = chequear({
     growth: entrega.answer_growth,
@@ -44,6 +48,7 @@ export default async function EntregaPage({ params }: PageProps<"/entregas/[id]"
           ← Inicio
         </Link>
         <h1 className="mt-2 text-lg font-semibold text-zinc-900">Tu entrega {entrega.pseudonym}</h1>
+        {intento && <p className="text-sm font-medium text-zinc-700">{intento}</p>}
         <p className="text-sm text-zinc-600">
           {entrega.status === "pending_review"
             ? "Pendiente de revisión humana. Quien la revise verá solo el seudónimo, no tu nombre."

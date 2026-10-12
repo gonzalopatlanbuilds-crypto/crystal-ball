@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { etiquetaIntento } from "@/lib/intentos";
 
 interface MiEntrega {
   id: string;
   pseudonym: string;
+  attempt_number: number;
   status: "pending_review" | "reviewed";
 }
 
@@ -13,7 +15,7 @@ export default async function DashboardPage() {
   // RLS: solo las propias.
   const { data: entregas, error } = await supabase
     .from("submissions")
-    .select("id, pseudonym, status")
+    .select("id, pseudonym, attempt_number, status")
     .order("created_at", { ascending: false })
     .returns<MiEntrega[]>();
   if (error) console.error("DashboardPage: no se pudieron leer las entregas", error);
@@ -46,8 +48,13 @@ export default async function DashboardPage() {
           <ul className="mt-2 divide-y divide-zinc-100">
             {entregas.map((e) => (
               <li key={e.id}>
-                <Link href={`/entregas/${e.id}`} className="flex justify-between py-2 text-sm hover:text-teal-800">
-                  <span className="font-medium">{e.pseudonym}</span>
+                <Link href={`/entregas/${e.id}`} className="flex justify-between gap-3 py-2 text-sm hover:text-teal-800">
+                  <span>
+                    <span className="font-medium">{e.pseudonym}</span>
+                    {etiquetaIntento(e.attempt_number) && (
+                      <span className="ml-2 text-xs text-zinc-500">{etiquetaIntento(e.attempt_number)}</span>
+                    )}
+                  </span>
                   <span className="text-zinc-500">
                     {e.status === "pending_review" ? "pendiente de revisión" : "revisada"}
                   </span>

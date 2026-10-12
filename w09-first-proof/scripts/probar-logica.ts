@@ -2,6 +2,7 @@
 // Uso: npm run test:logica
 import { CALCULOS, chequear } from "../lib/caso.ts";
 import { leerNumero, validarEntrega } from "../lib/validacion.ts";
+import { elegirEvidencia, etiquetaIntento } from "../lib/intentos.ts";
 
 let ok = 0;
 let fail = 0;
@@ -60,6 +61,25 @@ check("se redondea a 2 decimales como numeric(9,2)", red.ok && red.datos.answer_
 const varios = v({ growth: "abc", explanation: "corta" });
 check("varios errores a la vez, cada uno en su campo",
   !varios.ok && "growth" in varios.errores && "explanation" in varios.errores, varios);
+
+// Número de intento. La evidencia es siempre el intento 1, aunque haya
+// reenvíos posteriores (y vengan primero en la lista, como en el
+// dashboard, que ordena de más reciente a más antigua).
+const intentos = [
+  { id: "c", attempt_number: 3 },
+  { id: "b", attempt_number: 2 },
+  { id: "a", attempt_number: 1 },
+];
+check("elegirEvidencia devuelve el intento 1 aunque existan el 2 y el 3",
+  elegirEvidencia(intentos)?.id === "a", elegirEvidencia(intentos));
+check("elegirEvidencia: solo el intento 1 → ese",
+  elegirEvidencia([{ id: "a", attempt_number: 1 }])?.id === "a");
+check("elegirEvidencia: intento 1 borrado → null, no promueve el 2",
+  elegirEvidencia([{ id: "c", attempt_number: 3 }, { id: "b", attempt_number: 2 }]) === null);
+check("elegirEvidencia: sin entregas → null", elegirEvidencia([]) === null);
+check("intento 1 no lleva etiqueta", etiquetaIntento(1) === null);
+check("intento 2 → 'Intento 2: reenvío'", etiquetaIntento(2) === "Intento 2: reenvío");
+check("intento 3 → 'Intento 3: reenvío'", etiquetaIntento(3) === "Intento 3: reenvío");
 
 console.log(`\n${ok} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
