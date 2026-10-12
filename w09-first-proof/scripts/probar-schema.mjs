@@ -50,7 +50,7 @@ function check(name, cond, detail) {
 }
 
 const expl = "La empresa creció sus ingresos y mantuvo el margen, pero la cobranza se volvió más lenta y eso merece revisión primero.";
-const ins = (who, org) => as(who, `insert into submissions (org_id, candidate_id, answer_growth, answer_margin, answer_dso, explanation) values ($1,$2,10,30,30,$3) returning id, pseudonym, status`, [org, U[who], expl]);
+const ins = (who, org) => as(who, `insert into submissions (org_id, candidate_id, answer_growth, answer_margin, answer_dso, explanation) values ($1,$2,10,30,30,$3) returning id, pseudonym, status, attempt_number`, [org, U[who], expl]);
 
 const a = await as("A", `select * from create_org('Piloto Uno')`);
 const orgA = a.rows[0].org_id, code = a.rows[0].join_code;
@@ -60,13 +60,19 @@ await as("C", `select * from create_org('Piloto Dos')`);
 check("A no puede crear otra org", !!(await as("A", `select * from create_org('x')`)).error);
 
 const sA = await ins("A", orgA);
-check("A entrega → A-01, pending_review", sA.rows?.[0]?.pseudonym === "A-01" && sA.rows[0].status === "pending_review", sA);
+check("A entrega → A-01, pending_review, intento 1", sA.rows?.[0]?.pseudonym === "A-01" && sA.rows[0].status === "pending_review" && sA.rows[0].attempt_number === 1, sA);
 const sB = await ins("B", orgA);
-check("B entrega → A-02", sB.rows?.[0]?.pseudonym === "A-02", sB);
+check("B entrega → A-02, intento 1 (el contador es por candidato)", sB.rows?.[0]?.pseudonym === "A-02" && sB.rows[0].attempt_number === 1, sB);
 const idA = sA.rows[0].id, idB = sB.rows[0].id;
 
 let r = await as("A", `insert into submissions (org_id, candidate_id, explanation, pseudonym) values ($1,$2,$3,'A-99')`, [orgA, U.A, expl]);
 check("cliente no puede elegir seudónimo", /permission denied/.test(r.error), r);
+r = await as("A", `insert into submissions (org_id, candidate_id, explanation, attempt_number) values ($1,$2,$3,99)`, [orgA, U.A, expl]);
+check("cliente no puede elegir attempt_number", /permission denied/.test(r.error), r);
+r = await as("A", `update submissions set attempt_number=7 where id=$1`, [idA]);
+check("cliente no puede editar attempt_number", /permission denied/.test(r.error), r);
+r = await as("A", `update profiles set next_attempt=50 where id=$1`, [U.A]);
+check("cliente no puede mover su contador de intentos", /permission denied/.test(r.error) || r.rows?.length === 0, r);
 r = await as("A", `insert into submissions (org_id, candidate_id, explanation, ai_observations) values ($1,$2,$3,'[]')`, [orgA, U.A, expl]);
 check("cliente no puede insertar ai_observations", /permission denied/.test(r.error), r);
 r = await as("A", `update submissions set ai_observations='[{"id":"o1","texto":"falsa"}]' where id=$1`, [idA]);
@@ -76,7 +82,9 @@ check("cliente no puede cambiar status", /permission denied/.test(r.error), r);
 r = await as("A", `insert into submissions (org_id, candidate_id, explanation) values ($1,$2,$3)`, [orgA, U.B, expl]);
 check("A no puede entregar a nombre de B", /row-level security/.test(r.error), r);
 r = await as("C", `insert into submissions (org_id, candidate_id, explanation) values ($1,$2,$3)`, [orgA, U.C, expl]);
-check("C no puede entregar en org ajena", /row-level security/.test(r.error), r);
+// Lo rechaza primero el trigger (el perfil de C no es de esa org) y, si no,
+// RLS; cualquiera de los dos sirve. El rollback deshace los contadores.
+check("C no puede entregar en org ajena", /row-level security|no pertenece a esta organización/.test(r.error), r);
 r = await as("A", `insert into submissions (org_id, candidate_id, explanation) values ($1,$2,'muy corta')`, [orgA, U.A]);
 check("explicación < 80 rechazada por la base", /check constraint/.test(r.error), r);
 r = await as("A", `insert into submissions (org_id, candidate_id, explanation, answer_growth) values ($1,$2,$3,'NaN')`, [orgA, U.A, expl]);
@@ -140,6 +148,13 @@ const quedan = (await db.query(`select count(*)::int n from reviews where submis
 check("borrar la entrega borra su revisión", quedan === 0, quedan);
 r = await ins("B", orgA);
 check("seudónimo no se recicla tras borrar (A-03)", r.rows?.[0]?.pseudonym === "A-03", r);
+check("intento no se recicla tras borrar (B: intento 2)", r.rows?.[0]?.attempt_number === 2, r);
+r = await ins("A", orgA);
+check("segunda entrega de A → intento 2", r.rows?.[0]?.attempt_number === 2, r);
+r = await as("A", `select attempt_number from submissions order by attempt_number`);
+check("A ve sus intentos 1 y 2", r.rows?.map((x) => x.attempt_number).join() === "1,2", r);
+r = await as("A", `select * from blind_pending_submissions()`);
+check("la lista ciega no expone attempt_number", r.rows.every((x) => !("attempt_number" in x)), r);
 
 const fns = [["create_org", "'x'"], ["join_org", "'ABC-234'"], ["my_org_id", ""], ["generar_join_code", ""],
   ["blind_pending_submissions", ""], ["blind_submission", `'${idA}'`], ["submit_review", `'${idA}','{}','x','conversar','x'`]];

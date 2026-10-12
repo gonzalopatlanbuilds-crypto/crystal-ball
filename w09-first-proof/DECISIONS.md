@@ -222,3 +222,53 @@ rechazados, límites 79/80/800/801, errores por campo.
 bajo cada campo con lo escrito conservado, ver el resultado) ni nada en
 producción. Necesita login con Google, así que es prueba tuya después del
 deploy.
+
+## 2026-10-11 — Número de intento por candidato
+
+**Decisión tuya:** se mantienen las entregas múltiples, cada una con su
+número de intento (1, 2, 3…) por candidato.
+
+**Qué cambió (solo `sql/schema.sql`):**
+- `submissions.attempt_number` (not null, ≥ 1, único por
+  `org_id + candidate_id + attempt_number`).
+- `profiles.next_attempt`: contador por candidato.
+- El trigger `asignar_seudonimo()` asigna el intento en el mismo paso que
+  el seudónimo: `UPDATE profiles … RETURNING`, que bloquea la fila del
+  perfil, así que dos envíos simultáneos de la misma persona no pueden
+  quedar con el mismo número.
+
+**Asignado en el servidor, nunca desde el cliente:** `attempt_number` no
+está en la lista de columnas que `authenticated` puede insertar, no hay
+UPDATE en `submissions`, y no hay policy de update en `profiles`, así que
+el contador tampoco se puede mover desde la llave pública. Probado.
+
+**Nunca se reusa un número**, igual que el seudónimo: si alguien borra su
+intento 2, el siguiente es el 3. Un "intento 2" reciclado diría algo
+falso sobre cuántas veces lo intentó.
+
+**Efecto secundario en una prueba:** "C no puede entregar en una org
+ajena" ahora lo rechaza primero el trigger ("El candidato no pertenece a
+esta organización") y ya no RLS. Sigue rechazado; la prueba acepta
+cualquiera de los dos. Un insert rechazado (por el trigger o por RLS) no
+gasta números: Postgres deshace los contadores con el rollback (la prueba
+lo confirma: B sigue en A-03 / intento 2).
+
+**Migración para la base de producción, que ya existe:** el schema agrega
+la columna, numera las entregas existentes por candidato en orden de
+creación y deja cada contador después de su último intento. Probado
+corriendo el schema de GitHub (el que está hoy en Supabase), creando 4
+entregas (A, B, A, A) y corriendo el nuevo encima: quedaron A#1 B#1 A#2
+A#3, contadores A=4 B=2, y la siguiente de A salió #4. Correrlo dos
+veces no cambia nada.
+
+**No expuesto a quien revisa:** `blind_pending_submissions()` y
+`blind_submission()` no devuelven el intento (probado). Saber que
+alguien va en su tercer intento puede sesgar la revisión, y los campos
+ciegos del prompt no lo incluyen. Tampoco se muestra todavía en la
+pantalla del candidato: solo se guarda.
+
+**Pruebas:** `npm run test:schema` 56/56 (7 checks nuevos de intentos).
+
+**Pendiente tuyo:** volver a correr `sql/schema.sql` completo en Supabase
+(SQL Editor) para que producción tenga la columna. Sin eso, la app actual
+sigue funcionando: no lee ni escribe `attempt_number`.

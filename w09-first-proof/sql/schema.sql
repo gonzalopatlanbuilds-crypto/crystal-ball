@@ -35,8 +35,16 @@ create table if not exists public.profiles (
   org_id uuid not null references public.orgs (id) on delete cascade,
   email text not null,
   display_name text,
+  -- Contador de intentos por candidato (submissions.attempt_number). Igual
+  -- que next_pseudonym: nunca se reusa un número, aunque se borre una
+  -- entrega. Sin policy de update en profiles, el cliente no puede tocarlo.
+  next_attempt int not null default 1 check (next_attempt >= 1),
   created_at timestamptz not null default now()
 );
+
+-- Para bases creadas antes de existir la columna.
+alter table public.profiles
+  add column if not exists next_attempt int not null default 1 check (next_attempt >= 1);
 
 alter table public.profiles enable row level security;
 
@@ -195,6 +203,10 @@ create table if not exists public.submissions (
   candidate_id uuid not null references auth.users (id) on delete cascade,
   -- Lo asigna el trigger asignar_seudonimo(); el cliente no puede elegirlo.
   pseudonym text not null check (pseudonym ~ '^A-[0-9]{2,}$'),
+  -- Intento 1, 2, 3… de este candidato en esta org. Lo asigna el mismo
+  -- trigger desde profiles.next_attempt; el cliente no tiene permiso de
+  -- escribir la columna.
+  attempt_number int not null check (attempt_number >= 1),
   -- Mismos límites que lib/validacion.ts: la base es la última línea de
   -- defensa si alguien se salta el server action.
   answer_growth numeric(9, 2) check (answer_growth between -1000 and 1000),
@@ -212,6 +224,42 @@ create table if not exists public.submissions (
 
 alter table public.submissions enable row level security;
 
+-- Migración de attempt_number para bases que ya tenían entregas: se
+-- numeran por candidato en orden de creación y el contador del perfil
+-- queda después del último. Idempotente: en una base nueva o ya migrada no
+-- cambia nada.
+alter table public.submissions add column if not exists attempt_number int;
+
+update public.submissions s
+  set attempt_number = x.n
+  from (
+    select id, row_number() over (partition by candidate_id, org_id order by created_at, id) as n
+    from public.submissions
+  ) x
+  where s.id = x.id and s.attempt_number is null;
+
+alter table public.submissions alter column attempt_number set not null;
+
+do $$
+begin
+  alter table public.submissions
+    add constraint submissions_attempt_number_check check (attempt_number >= 1);
+exception when duplicate_object then null;
+end;
+$$;
+
+create unique index if not exists submissions_candidate_attempt_key
+  on public.submissions (org_id, candidate_id, attempt_number);
+
+update public.profiles p
+  set next_attempt = m.siguiente
+  from (
+    select candidate_id, org_id, max(attempt_number) + 1 as siguiente
+    from public.submissions
+    group by candidate_id, org_id
+  ) m
+  where p.id = m.candidate_id and p.org_id = m.org_id and p.next_attempt < m.siguiente;
+
 create or replace function public.asignar_seudonimo()
 returns trigger
 language plpgsql
@@ -220,6 +268,7 @@ set search_path = public
 as $$
 declare
   v_n int;
+  v_intento int;
 begin
   -- UPDATE ... RETURNING toma lock de la fila de la org: dos entregas
   -- simultáneas no pueden recibir el mismo número.
@@ -229,7 +278,19 @@ begin
   if v_n is null then
     raise exception 'Organización no encontrada.';
   end if;
+
+  -- Lo mismo con el perfil del candidato: dos envíos simultáneos de la
+  -- misma persona no pueden quedar con el mismo intento. Si el perfil no es
+  -- de esa org, no hay fila que actualizar y se rechaza.
+  update public.profiles set next_attempt = next_attempt + 1
+    where id = new.candidate_id and org_id = new.org_id
+    returning next_attempt - 1 into v_intento;
+  if v_intento is null then
+    raise exception 'El candidato no pertenece a esta organización.';
+  end if;
+
   new.pseudonym := 'A-' || lpad(v_n::text, 2, '0');
+  new.attempt_number := v_intento;
   new.status := 'pending_review';
   return new;
 end;
