@@ -1,0 +1,9 @@
+# Secretos: nunca al repo.
+.env*
+*.env.local
+# Las plantillas vacías sí se versionan (cada wNN tiene la suya).
+!.env.local.example
+
+# Vercel y dependencias.
+.vercel/
+node_modules/
