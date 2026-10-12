@@ -3,6 +3,7 @@
 import { CALCULOS, chequear } from "../lib/caso.ts";
 import { leerNumero, validarEntrega } from "../lib/validacion.ts";
 import { elegirEvidencia, etiquetaIntento } from "../lib/intentos.ts";
+import { revisarObservaciones } from "../lib/guardia-observaciones.ts";
 
 let ok = 0;
 let fail = 0;
@@ -80,6 +81,44 @@ check("elegirEvidencia: sin entregas → null", elegirEvidencia([]) === null);
 check("intento 1 no lleva etiqueta", etiquetaIntento(1) === null);
 check("intento 2 → 'Intento 2: reenvío'", etiquetaIntento(2) === "Intento 2: reenvío");
 check("intento 3 → 'Intento 3: reenvío'", etiquetaIntento(3) === "Intento 3: reenvío");
+
+// Guardia de observaciones de IA (textos escritos a mano; la prueba con
+// salidas reales de Haiku está en scripts/probar-observaciones.ts).
+const pasa = (obs: unknown) => revisarObservaciones(obs).length === 0;
+const buenas = [
+  "Menciona que el margen bruto bajó entre T1 y T2.",
+  "No cuantifica el cambio en las cuentas por cobrar.",
+  "Propone revisar primero las condiciones de crédito a clientes.",
+];
+check("guardia: observaciones descriptivas pasan", pasa(buenas), revisarObservaciones(buenas));
+check("guardia: cifras de la hoja de datos pasan", pasa(["Menciona que los ingresos pasaron de 4,200,000 a 4,620,000.", "Usa la fórmula con 90 días."]),
+  revisarObservaciones(["Menciona que los ingresos pasaron de 4,200,000 a 4,620,000.", "Usa la fórmula con 90 días."]));
+check("guardia: 'Señala' con acento cuenta como verbo válido", pasa(["Señala que la cobranza es más lenta.", "No compara T1 con T2."]));
+const malas: [string, unknown][] = [
+  ["puntaje", ["Menciona el margen. Calificación: alta.", "No cuantifica nada."]],
+  ["10 de 10", ["Menciona todo, merece 10 de 10.", "No cuantifica nada."]],
+  ["aprobado", ["Menciona el margen, por lo que queda aprobado.", "No cuantifica nada."]],
+  ["rechazado", ["Menciona poco; se rechaza.", "No cuantifica nada."]],
+  ["juicio 'buena'", ["Explica de forma buena el cambio.", "No cuantifica nada."]],
+  ["juicio 'excelente'", ["Describe excelente análisis.", "No cuantifica nada."]],
+  ["'incorrecto'", ["Menciona un margen incorrecto.", "No cuantifica nada."]],
+  ["'error'", ["Identifica un error en la cobranza.", "No cuantifica nada."]],
+  ["contratación", ["Propone que se le contrate.", "No cuantifica nada."]],
+  ["empleo", ["Menciona experiencia de empleo.", "No cuantifica nada."]],
+  ["vacante", ["Relaciona el caso con la vacante.", "No cuantifica nada."]],
+  ["recomienda", ["Incluye razones; se recomienda avanzar.", "No cuantifica nada."]],
+  ["porcentaje inventado", ["Menciona que el margen bajó 2 puntos.", "No cuantifica nada."]],
+  ["cifra derivada (32%)", ["Menciona un margen de 32% en T1.", "No cuantifica nada."]],
+  ["cifra derivada (22.5)", ["Menciona 22.5 días de cobranza.", "No cuantifica nada."]],
+  ["no empieza con verbo", ["El texto es claro.", "No cuantifica nada."]],
+  ["solo una", ["Menciona el margen."]],
+  ["cinco", ["Menciona a.", "Menciona b.", "Menciona c.", "Menciona d.", "Menciona e."].map((x) => x + " del caso")],
+  ["no es lista", "Menciona el margen."],
+  ["muy larga", ["Menciona " + "el margen ".repeat(30), "No cuantifica nada."]],
+];
+for (const [nombre, obs] of malas) {
+  check(`guardia rechaza: ${nombre}`, !pasa(obs), revisarObservaciones(obs));
+}
 
 console.log(`\n${ok} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

@@ -325,3 +325,57 @@ producción ya tenía `submissions.attempt_number` y
 intento. La pantalla del revisor no existe aún (Feature 4); por ahora
 solo está probado en `test:schema` que las funciones `blind_*` no lo
 devuelven.
+
+## 2026-10-11 — Feature 3: observaciones preparadas por IA (código; prueba real pendiente)
+
+**Qué cambió:**
+- `lib/observaciones.ts`: llama a `claude-haiku-4-5` server-side con
+  solo la hoja de datos del caso y la explicación del candidato (entre
+  `<explicacion>`, tratada como material, no como instrucciones). Pide
+  JSON con `output_config.format` (`json_schema`); 2 a 4 observaciones.
+  Si la guardia rechaza el lote, pide otra vez (2 intentos máximo); si
+  vuelve a fallar, la entrega queda **sin** observaciones.
+- `lib/guardia-observaciones.ts`: rechaza calificaciones/puntajes/
+  niveles, aprobado/rechazado/apto, juicios de calidad (bueno, excelente,
+  deficiente…), juicios de correcto/incorrecto/error (el chequeo de
+  cálculos es del sistema), lenguaje de contratación o empleo, cualquier
+  cifra que no esté en la hoja de datos (ni siquiera derivadas como 32% o
+  22.5) y cualquier observación que no empiece con un verbo descriptivo
+  ("Menciona…", "No cuantifica…"). Si una sola falla, se rechaza el lote
+  entero: no se "limpia" texto de la IA a mano.
+- `app/(app)/caso/actions.ts`: la entrega se inserta primero y después se
+  piden las observaciones; si la IA falla, la entrega sigue (solo se
+  registra en el log del servidor, incluido el texto rechazado).
+- `components/ObservacionesIA.tsx` en `/entregas/[id]`: la etiqueta
+  "Preparadas por IA, no son una calificación ni una decisión" está en el
+  componente, nunca la escribe el modelo.
+
+**Decisión de seguridad: service role key solo para escribir
+`ai_observations`.** El candidato no puede escribir esa columna con la
+llave pública (privilegios por columna, probado en `test:schema`); si
+pudiera, fabricaría "observaciones de IA" a su favor. Cualquier función
+de la base que el servidor pudiera llamar con la sesión del usuario, el
+usuario también podría llamarla, así que la única vía segura es un
+secreto que solo tiene el servidor. `lib/supabase/admin.ts` lo usa para un
+solo UPDATE, filtrado por id + candidate_id + `ai_observations is null`.
+Sin la llave, la entrega funciona igual y queda sin observaciones.
+
+**Pruebas:**
+- `test:logica` 61/61: 23 checks nuevos de la guardia con textos escritos
+  a mano (3 que deben pasar, 20 que deben rechazarse).
+- Build limpio, lint sin warnings, `test:schema` 56/56.
+
+**BLOQUEADO — prueba con llamadas reales (3 rondas × 9 explicaciones):**
+la `ANTHROPIC_API_KEY` de `.env.local` está bien leída (108 caracteres,
+prefijo `sk-ant-api`) pero la API responde 401 `invalid x-api-key`
+(request_id `req_011CfwbwqaXwvYwKXg11saSM`). Probablemente es la llave que
+se sugirió rotar porque quedó impresa en esta sesión. El script ya está
+listo: `node scripts/probar-observaciones.ts 3` (9 explicaciones: buena,
+buena sin cifras, vaga, fuera de tema, dos inyecciones de prompt, muchas
+cifras, en inglés, razonamiento equivocado).
+
+**Pendiente tuyo (no puedo escribir llaves en formularios):**
+1. Llave nueva de Anthropic en `.env.local` y en Vercel
+   (`ANTHROPIC_API_KEY`, reemplazar la actual).
+2. `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Project Settings → API →
+   service_role) en `.env.local` y en Vercel, Production y Preview.

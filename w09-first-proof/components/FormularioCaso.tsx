@@ -65,7 +65,7 @@ export default function FormularioCaso() {
         disabled={pending}
         className="mt-6 w-full rounded-xl bg-teal-800 px-4 py-3.5 text-base font-medium text-white hover:bg-teal-700 disabled:opacity-50"
       >
-        {pending ? "Enviando…" : "Enviar a revisión humana"}
+        {pending ? "Enviando… (tarda unos segundos)" : "Enviar a revisión humana"}
       </button>
       {state?.mensaje && <p className="mt-3 text-sm text-red-600">{state.mensaje}</p>}
 

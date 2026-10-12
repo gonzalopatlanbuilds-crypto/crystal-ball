@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { chequear } from "@/lib/caso";
 import { etiquetaIntento } from "@/lib/intentos";
 import ChequeoCalculos from "@/components/ChequeoCalculos";
+import ObservacionesIA from "@/components/ObservacionesIA";
 
 interface Entrega {
   id: string;
@@ -13,6 +14,7 @@ interface Entrega {
   answer_margin: number | string | null;
   answer_dso: number | string | null;
   explanation: string;
+  ai_observations: unknown;
   status: "pending_review" | "reviewed";
 }
 
@@ -26,7 +28,7 @@ export default async function EntregaPage({ params }: PageProps<"/entregas/[id]"
   const supabase = await createClient();
   const { data: entrega, error } = await supabase
     .from("submissions")
-    .select("id, pseudonym, attempt_number, answer_growth, answer_margin, answer_dso, explanation, status")
+    .select("id, pseudonym, attempt_number, answer_growth, answer_margin, answer_dso, explanation, ai_observations, status")
     .eq("id", id)
     .maybeSingle<Entrega>();
 
@@ -62,6 +64,8 @@ export default async function EntregaPage({ params }: PageProps<"/entregas/[id]"
         <h2 className="text-sm font-semibold text-zinc-900">Tu explicación</h2>
         <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-700">{entrega.explanation}</p>
       </section>
+
+      <ObservacionesIA observaciones={entrega.ai_observations} />
     </main>
   );
 }
