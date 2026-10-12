@@ -30,6 +30,10 @@ export default function LoginPage() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          // Sin esto, Google entra solo con la cuenta que ya tiene abierta
+          // en el navegador: después de "Cerrar sesión" no había forma de
+          // elegir otra (candidato y revisor son cuentas distintas).
+          queryParams: { prompt: "select_account" },
         },
       });
       if (error) throw error;

@@ -635,3 +635,17 @@ evidence file` (d430dea, deploy 2).
    expediente revisado.
 3. Probar "Solicitar eliminación de mi expediente" (borra todo; lo
    tienes que hacer tú).
+
+## 2026-10-11 — Bug: después de cerrar sesión no se podía elegir otra cuenta
+
+**Reportado por ti:** al cerrar sesión e iniciar otra vez, Google entraba
+directo con la misma cuenta. "Cerrar sesión" cierra la sesión de la app
+(Supabase), no la de Google en el navegador, y sin indicación Google usa
+la cuenta abierta. Para este slice es un bloqueo real: candidato y
+revisor tienen que ser cuentas distintas.
+
+**Arreglo:** `queryParams: { prompt: "select_account" }` en
+`signInWithOAuth` (`app/login/page.tsx`): Google muestra siempre el
+selector de cuentas. Build limpio y lint sin warnings; **pendiente
+verificarlo en producción** (necesita iniciar sesión con Google, lo
+pruebas tú).
