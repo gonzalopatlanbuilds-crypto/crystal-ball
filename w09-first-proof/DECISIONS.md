@@ -685,3 +685,17 @@ en `test:schema` y `test:logica`.
 
 **Sigue sin probar en producción:** el botón "Solicitar eliminación de mi
 expediente" (borra todo; probado en `test:schema`).
+
+## 2026-10-11 — Eliminación verificada en producción
+
+**Hecho por ti:** "Solicitar eliminación de mi expediente" y un envío
+nuevo. **Verificado en la base (solo lectura):** A-01, A-02, A-03 y la
+revisión de A-01 ya no existen; la entrega nueva es **A-04, intento 1**
+(contador reiniciado, seudónimo no reusado) con 3 observaciones de IA.
+Criterio "deleting the submission deletes its review and file" cumplido
+en producción.
+
+**Pendiente:** al momento de esta lectura, A-04 no tiene revisión
+(`pending_review`, 0 revisiones en la base): confirmar/descartar
+observaciones de IA en una revisión real aún no está verificado en
+producción.
