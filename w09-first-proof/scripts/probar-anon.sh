@@ -7,8 +7,10 @@
 # Esperado: cada RPC => 401/403/404 con "permission denied"; cada tabla => [] o
 # "permission denied". Cualquier 200 en un RPC es un BUG.
 set -u
-source <(grep -E '^NEXT_PUBLIC_SUPABASE_(URL|ANON_KEY)=' .env.local)
-U="$NEXT_PUBLIC_SUPABASE_URL"; K="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+# No `source`: con "VAR= valor" (espacio tras el =, que Next.js tolera)
+# bash deja VAR vacía. Se lee y se recorta a mano.
+leer() { grep -E "^$1=" .env.local | head -1 | cut -d= -f2- | tr -d '' | sed -E 's/^[[:space:]"]+|[[:space:]"]+$//g'; }
+U="$(leer NEXT_PUBLIC_SUPABASE_URL)"; K="$(leer NEXT_PUBLIC_SUPABASE_ANON_KEY)"
 [ -z "$U" ] || [ -z "$K" ] && { echo "Faltan variables en .env.local"; exit 1; }
 Z=00000000-0000-0000-0000-000000000000
 
