@@ -699,3 +699,25 @@ en producción.
 (`pending_review`, 0 revisiones en la base): confirmar/descartar
 observaciones de IA en una revisión real aún no está verificado en
 producción.
+
+## 2026-10-11 — Revisión con observaciones de IA verificada en producción · cierre
+
+**Hecho por ti** con la segunda cuenta. **Verificado en la base (solo
+lectura):** A-04 (intento 1) `reviewed`; una revisión cuyo revisor no es
+el candidato, decisiones `{o1, o2, o3: confirmada}` (una por cada
+observación de IA, ni una más), "Necesita más evidencia", conflicto
+"Ninguno", nota de 13 caracteres, 2026-10-12 04:11 UTC.
+
+Único camino no ejercido en producción: **descartar** una observación con
+motivo (las tres se confirmaron). Está cubierto en `test:schema` (motivo ≤
+120, solo en descartadas) y `test:logica`.
+
+**Estado final de w09:** Features 1–5 desplegadas en
+`https://crystal-ball-w09-first-proof.vercel.app` y verificadas en
+producción: login con selector de cuentas, entrega y chequeo automático,
+observaciones de IA con guardia, revisión ciega entre dos cuentas,
+expediente, eliminación, Deployment Protection apagado, anon sin acceso a
+ningún RPC. Bugs encontrados y arreglados: cifras en palabras en la
+guardia, texto contradictorio del bloque de IA, textos del revisor
+dirigidos al candidato, cuenta de Google sin selector, código de org
+invisible. **Solo falta el video demo.**
