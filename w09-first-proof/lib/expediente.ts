@@ -4,6 +4,22 @@
 
 import { CRITERIOS } from "./caso.ts";
 
+// Prueba de persona (F5): con solo la lista de "No", alguien desconfiado
+// lee el expediente como algo que no sirve para nada. Esto dice, sin
+// prometer nada, qué sí deja ver. Texto fijo, nunca de la IA.
+export const SI_MUESTRA: Record<"candidato" | "revisor", string[]> = {
+  candidato: [
+    "Cómo resolviste un caso financiero, con tus propias palabras.",
+    "Qué vio una persona real al revisarlo, sin saber quién eres, y cuándo lo hizo.",
+    "Qué revisó el sistema (los números) y qué revisó la persona (la explicación).",
+  ],
+  revisor: [
+    "Cómo resolvió la persona un caso financiero, con sus propias palabras.",
+    "Qué viste al revisarlo, sin saber quién es, y cuándo lo hiciste.",
+    "Qué revisó el sistema (los números) y qué revisaste tú (la explicación).",
+  ],
+};
+
 export const NO_PRUEBA = [
   "No es empleo ni trabajo real.",
   "No garantiza una entrevista ni una contratación.",
@@ -11,11 +27,20 @@ export const NO_PRUEBA = [
   "No se ha enviado a ningún empleador: el caso y la vacante son simulados.",
 ];
 
-export const QUIEN_PUEDE_VERLO =
-  "Tú y la persona que revisó tu entrega (sin ver tu nombre). Nadie más: no se comparte con empleadores.";
+// Mismo contenido para las dos vistas, dicho a quien lo lee (bug de la
+// pasada mecánica: la copia del revisor le hablaba como si fuera el
+// candidato).
+export type Vista = "candidato" | "revisor";
 
-export const REAL_Y_SIMULADO =
-  "Real: tus respuestas, tu explicación y la revisión humana. Simulado: la empresa, el caso y cualquier vacante.";
+export const QUIEN_PUEDE_VERLO: Record<Vista, string> = {
+  candidato: "Tú y la persona que revisó tu entrega (sin ver tu nombre). Nadie más: no se comparte con empleadores.",
+  revisor: "La persona candidata y tú, que la revisaste sin ver su nombre. Nadie más: no se comparte con empleadores.",
+};
+
+export const REAL_Y_SIMULADO: Record<Vista, string> = {
+  candidato: "Real: tus respuestas, tu explicación y la revisión humana. Simulado: la empresa, el caso y cualquier vacante.",
+  revisor: "Real: las respuestas, la explicación y tu revisión. Simulado: la empresa, el caso y cualquier vacante.",
+};
 
 export const RECOMENDACIONES = {
   conversar: "Conversar con el candidato",

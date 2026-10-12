@@ -115,6 +115,7 @@ export default async function EntregaPage({ params }: PageProps<"/entregas/[id]"
         explicacion={entrega.explanation}
         observaciones={leerObservaciones(entrega.ai_observations)}
         revision={revision}
+        vista="candidato"
         accion={<BotonEliminar />}
       />
     </main>

@@ -484,3 +484,126 @@ del mockup 2 en `/entregas/[id]` para el intento 1, botón de eliminación
 push y prueba en producción. Probar la revisión en producción requiere una
 **segunda cuenta de Google** en la misma org (no puedo crear cuentas).
 Después: Feature 5.
+
+## 2026-10-11 — Feature 4 (parte 2): revisión ciega y expediente
+
+**Qué cambió:**
+- `/revisar`: lista ciega (solo seudónimos, vía
+  `blind_pending_submissions()`), sin entregas propias ni reenvíos, y
+  "Revisadas por ti".
+- `/revisar/[id]`: tabla del caso, cálculos, explicación y el formulario:
+  confirmar/descartar cada observación de IA (motivo opcional al
+  descartar), conflicto de interés obligatorio ("Ninguno" o texto),
+  recomendación ("Conversar con el candidato" / "Necesita más
+  evidencia"; no existe "rechazar") y nota obligatoria. El formulario usa
+  estado controlado: un error de validación no borra lo elegido.
+- **Chequeo amistoso revisor ≠ candidato:** la página y el server action
+  consultan primero `submissions` con la sesión del usuario (RLS solo
+  devuelve propias): si la encuentra, muestra "No puedes revisar tu
+  propia entrega" sin llegar a la base. El trigger sigue siendo la regla
+  real.
+- `/entregas/[id]` del intento 1 = expediente del mockup 2 (bloques 1–5,
+  "Lo que este archivo NO prueba", "Quién puede verlo", "Real y
+  simulado", todo texto fijo de `lib/expediente.ts`), con nombre del
+  revisor (display_name de su perfil; si no hay, "Persona revisora del
+  piloto"), fecha en hora de CDMX y decisión por observación. Los
+  reenvíos siguen como vista de práctica y en "Tus entregas" dicen
+  "práctica, no se revisa".
+- "Solicitar eliminación de mi expediente": dos pasos dentro de la página
+  (sin `confirm()` del navegador) → `borrar_mis_entregas()`.
+- `ChequeoCalculos` ahora dice "Respuesta" y "no es un juicio sobre la
+  persona", porque también lo ve quien revisa.
+
+**Schema en producción:** lo corrí yo desde Chrome (autorizaste hacerlo
+todo hasta la Feature 5): SQL Editor con el `sql/schema.sql` del commit
+`acf1013`, cargado desde GitHub (SHA-256 idéntico al archivo local
+probado). Supabase avisó "destructive operations" (son los `drop … if
+exists` de policies/triggers y el `delete` dentro de
+`borrar_mis_entregas`); resultado "Success. No rows returned".
+`scripts/probar-anon.sh` contra producción: los 8 RPCs (incluido
+`borrar_mis_entregas`) dan 401 a anon; tablas `[]`.
+
+**Pruebas:** build limpio, lint sin warnings, `test:logica` 87/87,
+`test:schema` 74/74.
+
+## 2026-10-11 — Feature 4 verificada en producción (con tu cuenta, vía Chrome)
+
+Deploy `2ec6279`:
+- `/revisar`: "No hay entregas pendientes de revisión" — correcto: eres
+  la única persona de la org y tus entregas se excluyen.
+- "Tus entregas": A-01 "expediente · pendiente de revisión"; A-02 y A-03
+  "práctica, no se revisa".
+- `/entregas/<A-01>`: expediente completo (bloques 1–5, C1 → Sistema,
+  C2/C3 → "Pendiente de revisión humana", "NO prueba", "Quién puede
+  verlo", "Real y simulado", botón de eliminación).
+- `/revisar/<A-01>` con tu cuenta: **"No puedes revisar tu propia
+  entrega"** (chequeo amistoso; el trigger está probado en `test:schema`).
+
+**No verificado en producción (necesita una segunda cuenta de Google en
+la org, que no puedo crear):** firmar una revisión real, que el
+expediente muestre al revisor y las decisiones, y leer la respuesta de
+red de la pantalla del revisor. Cubierto en `test:schema` (la función
+ciega no devuelve nombre, correo, id, fecha ni intento).
+**Tampoco probé en producción el botón "Sí, borrar todo":** borrar datos
+de forma permanente desde el navegador es algo que no hago aunque esté
+autorizado; está probado en `test:schema` y lo puedes probar tú.
+
+## 2026-10-11 — Feature 5: pasada mecánica, bugs y prueba de persona
+
+**Pasada mecánica (test plan del packet):**
+| Punto | Resultado |
+|---|---|
+| Chequeo automático = cálculo a mano (10.0/30.0/30.0) | ✅ `test:logica` + producción (A-03) |
+| Observaciones generadas muchas veces sin puntaje, aprobado, empleo ni cifras ajenas | ✅ 54 llamadas reales leídas a mano (bug de cifras en palabras arreglado en F3) |
+| El candidato no puede revisar su propia entrega (servidor y base) | ✅ producción (mensaje) + `test:schema` (trigger, con y sin el RPC) |
+| La vista del revisor no muestra nombre | ✅ `test:schema`; ⚠️ producción pendiente (segunda cuenta) |
+| Otra org no ve nada | ✅ `test:schema` |
+| Borrar elimina entrega, revisión y expediente | ✅ `test:schema`; ⚠️ producción pendiente (lo pruebas tú) |
+| El bloque "NO prueba" siempre aparece | ✅ texto fijo, visto en producción |
+| anon no ejecuta ningún RPC | ✅ producción, 8/8 con 401 |
+
+**Bug 1 (encontrado en producción):** en A-01 (sin observaciones de IA
+porque se envió antes de la F3) el bloque 3 decía "Pendientes de que una
+persona las confirme o descarte" justo encima de "No hay observaciones de
+IA". Arreglo: esa frase solo aparece si hay observaciones.
+
+**Bug 2:** la copia del expediente que ve quien revisa le hablaba como al
+candidato ("Tú y la persona que revisó **tu** entrega", "Real: **tus**
+respuestas"). Arreglo: los textos fijos tienen versión por vista
+(`candidato` / `revisor`) y una prueba de regresión.
+
+**Riesgo cerrado parcialmente:** la explicación es texto libre y puede
+revelar identidad (en la prueba real, "fuera de tema" hablaba de la
+persona). No se puede limpiar a mano sin alterar la evidencia, así que:
+aviso en el formulario del candidato ("No escribas tu nombre, tu escuela
+ni datos personales…") y en la pantalla del revisor ("Si el texto revela
+quién es… no lo uses y decláralo como conflicto si la conoces").
+
+**Prueba de persona (capa 1), sobre las pantallas reales en producción.**
+Persona: 25 años, egresada de Contaduría, reparte comida por app, ha
+aplicado decenas de veces, hizo pruebas en línea que nunca respondieron y
+desconfía de plataformas que prometen trabajo. (Es una prueba simulada
+por mí recorriendo las capturas en orden, no una persona real.)
+1. **Login / inicio:** el aviso "No es trabajo real ni garantiza empleo.
+   No pagas nada." le baja la guardia: no le están vendiendo nada.
+2. **Caso:** la tabla y las fórmulas se entienden; duda en "Días de
+   cobranza", pero la fórmula está en la etiqueta. El nuevo aviso de no
+   poner su nombre le confirma que "a ciegas" va en serio.
+3. **Resultado:** "no coincide · valor correcto: 30.0" sin puntaje se lee
+   como retroalimentación, no como reprobar.
+4. **Reenvío:** "Intento 2: reenvío · práctica, no se revisa" — entiende
+   que el primero es el que cuenta; podría frustrarle, pero está dicho.
+5. **Expediente:** cree el bloque de cálculos (es verificable) y la
+   etiqueta de IA. **La peor confusión:** llega a "Lo que este archivo NO
+   prueba" (cuatro "No…") y no hay nada que diga para qué sí sirve; para
+   alguien que ya fue ignorado por pruebas en línea, eso se lee como
+   "otra prueba que no sirve" → razón para irse, no honestidad.
+   **Arreglo:** bloque fijo "Lo que este archivo sí muestra" justo antes
+   (cómo resolvió el caso con sus palabras; qué vio una persona real a
+   ciegas y cuándo; qué revisó el sistema y qué la persona), sin prometer
+   empleo ni entrevistas (prueba de regresión que lo impide).
+6. **Eliminación:** el botón en dos pasos ("No se puede deshacer") le da
+   control; no hay sorpresas.
+
+**Pruebas:** `test:logica` 90/90, `test:schema` 74/74, build limpio,
+lint sin warnings.

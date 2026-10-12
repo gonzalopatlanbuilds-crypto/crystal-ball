@@ -4,7 +4,7 @@ import { CALCULOS, chequear } from "../lib/caso.ts";
 import { leerNumero, validarEntrega } from "../lib/validacion.ts";
 import { elegirEvidencia, etiquetaIntento } from "../lib/intentos.ts";
 import { revisarObservaciones } from "../lib/guardia-observaciones.ts";
-import { mapaCriterios, NO_PRUEBA, nombreRevisor } from "../lib/expediente.ts";
+import { mapaCriterios, NO_PRUEBA, nombreRevisor, QUIEN_PUEDE_VERLO, REAL_Y_SIMULADO, SI_MUESTRA } from "../lib/expediente.ts";
 import { validarRevision } from "../lib/validacion-revision.ts";
 
 let ok = 0;
@@ -147,6 +147,13 @@ check("criterios: ningún texto resume a la persona en un número",
 check("nombreRevisor sin nombre → genérico",
   nombreRevisor("  ") === "Persona revisora del piloto" && nombreRevisor(null) === "Persona revisora del piloto");
 check("bloque NO prueba: dice que no se envió a ningún empleador", NO_PRUEBA.some((t) => /ningún empleador/.test(t)));
+// Bug de la pasada mecánica (F5): la copia del revisor le hablaba como al candidato.
+check("vista revisor: no dice 'tu entrega' ni 'tus respuestas'",
+  !/\btu entrega\b|\btus respuestas\b|\btu explicación\b/i.test(`${QUIEN_PUEDE_VERLO.revisor} ${REAL_Y_SIMULADO.revisor}`));
+check("vista candidato: sí le habla al candidato", /tu entrega/.test(QUIEN_PUEDE_VERLO.candidato));
+// Prueba de persona (F5): "sí muestra" no puede prometer empleo ni entrevistas.
+check("SI_MUESTRA no promete empleo, entrevista ni contratación",
+  [...SI_MUESTRA.candidato, ...SI_MUESTRA.revisor].every((t) => !/emple|entrevist|contrat|vacante|garantiz/i.test(t)));
 
 const base = {
   idsObservaciones: ["o1", "o2"],

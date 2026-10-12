@@ -3,11 +3,13 @@ import {
   fechaRevision,
   mapaCriterios,
   NO_PRUEBA,
+  SI_MUESTRA,
   QUIEN_PUEDE_VERLO,
   REAL_Y_SIMULADO,
   RECOMENDACIONES,
   type DecisionObservacion,
   type Recomendacion,
+  type Vista,
 } from "@/lib/expediente";
 import type { Observacion } from "@/lib/observaciones";
 import { ETIQUETA_IA } from "@/components/ObservacionesIA";
@@ -27,6 +29,7 @@ interface Props {
   explicacion: string;
   observaciones: Observacion[] | null;
   revision: DatosRevision | null;
+  vista: Vista;
   // Solo el candidato ve el botón de eliminar (lo pasa la página).
   accion?: React.ReactNode;
 }
@@ -36,7 +39,8 @@ const caja = "rounded-xl border p-4";
 // Expediente de evidencia (mockup 2). Todo el texto fijo sale de
 // lib/expediente.ts; la IA solo aporta las observaciones del bloque 3, y
 // ahí cada una muestra lo que decidió una persona.
-export default function Expediente({ seudonimo, resultados, explicacion, observaciones, revision, accion }: Props) {
+export default function Expediente({ seudonimo, resultados, explicacion, observaciones, revision, vista, accion }: Props) {
+  const hayObservaciones = !!observaciones && observaciones.length > 0;
   const criterios = mapaCriterios(revision?.revisor ?? null);
 
   return (
@@ -71,11 +75,15 @@ export default function Expediente({ seudonimo, resultados, explicacion, observa
       <section className={`${caja} border-sky-600/40 bg-sky-50/60`}>
         <h2 className="text-sm font-semibold text-zinc-900">3 · Observaciones preparadas por IA</h2>
         <p className="text-xs text-zinc-600">
-          {ETIQUETA_IA} {revision ? "Las revisó una persona." : "Pendientes de que una persona las confirme o descarte."}
+          {ETIQUETA_IA}
+          {/* Bug de la pasada mecánica: sin observaciones decía "pendientes
+              de confirmar" justo encima de "No hay observaciones". */}
+          {hayObservaciones &&
+            (revision ? " Las revisó una persona." : " Pendientes de que una persona las confirme o descarte.")}
         </p>
-        {observaciones && observaciones.length > 0 ? (
+        {hayObservaciones ? (
           <ul className="mt-2 space-y-2 text-sm text-zinc-800">
-            {observaciones.map((o) => {
+            {observaciones!.map((o) => {
               const d = revision?.decisiones[o.id];
               return (
                 <li key={o.id}>
@@ -128,6 +136,15 @@ export default function Expediente({ seudonimo, resultados, explicacion, observa
         </ul>
       </section>
 
+      <section className={`${caja} border-teal-700/40 bg-teal-50/60`}>
+        <h2 className="text-sm font-semibold text-teal-950">Lo que este archivo sí muestra</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
+          {SI_MUESTRA[vista].map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      </section>
+
       <section className={`${caja} border-amber-500/60 bg-amber-50`}>
         <h2 className="text-sm font-semibold text-amber-950">Lo que este archivo NO prueba</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-950">
@@ -139,9 +156,9 @@ export default function Expediente({ seudonimo, resultados, explicacion, observa
 
       <section className={`${caja} border-zinc-300 bg-stone-50`}>
         <h2 className="text-sm font-semibold text-zinc-900">Quién puede verlo</h2>
-        <p className="mt-1 text-sm text-zinc-800">{QUIEN_PUEDE_VERLO}</p>
+        <p className="mt-1 text-sm text-zinc-800">{QUIEN_PUEDE_VERLO[vista]}</p>
         <h2 className="mt-3 text-sm font-semibold text-zinc-900">Real y simulado</h2>
-        <p className="mt-1 text-sm text-zinc-800">{REAL_Y_SIMULADO}</p>
+        <p className="mt-1 text-sm text-zinc-800">{REAL_Y_SIMULADO[vista]}</p>
       </section>
 
       {accion}

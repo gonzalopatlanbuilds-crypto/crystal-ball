@@ -46,6 +46,9 @@ export default function FormularioCaso() {
         Tu explicación (3 a 5 oraciones, en tus palabras)
       </label>
       <p className="mt-0.5 text-sm text-zinc-600">{PREGUNTA_EXPLICACION}</p>
+      <p className="mt-0.5 text-xs text-zinc-500">
+        No escribas tu nombre, tu escuela ni datos personales: quien revisa lo leerá y la revisión es a ciegas.
+      </p>
       <textarea
         id="explanation"
         name="explanation"

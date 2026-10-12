@@ -89,6 +89,7 @@ export default async function RevisarEntregaPage({ params }: PageProps<"/revisar
           resultados={resultados}
           explicacion={entrega.explanation}
           observaciones={observaciones}
+          vista="revisor"
           revision={{
             revisor: nombreRevisor(perfil?.display_name),
             creadaEn: rev.created_at,
@@ -116,6 +117,10 @@ export default async function RevisarEntregaPage({ params }: PageProps<"/revisar
       <ChequeoCalculos resultados={resultados} />
       <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-zinc-900">Explicación del candidato</h2>
+        <p className="text-xs text-zinc-500">
+          Si el texto revela quién es (un nombre, una escuela), no lo uses en tu revisión y decláralo como conflicto si
+          conoces a la persona.
+        </p>
         <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-800">{entrega.explanation}</p>
       </section>
       <FormularioRevision submissionId={entrega.id} observaciones={observaciones ?? []} />
