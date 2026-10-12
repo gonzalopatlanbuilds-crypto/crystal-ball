@@ -607,3 +607,31 @@ por mí recorriendo las capturas en orden, no una persona real.)
 
 **Pruebas:** `test:logica` 90/90, `test:schema` 74/74, build limpio,
 lint sin warnings.
+
+## 2026-10-11 — Cierre de la Feature 5 (deploy 2: `d430dea`)
+
+- **Arreglos visibles en producción** (A-01, con tu sesión): aparece "Lo
+  que este archivo sí muestra"; ya no aparece la frase contradictoria del
+  bloque 3; "NO prueba" sigue.
+- **Desde fuera con curl, sin sesión:** `/login` 200, título
+  "First-Proof Finance MX", sin muro de Vercel → **Deployment Protection
+  apagado**; `/dashboard`, `/revisar`, `/caso` → 307 a `/login`;
+  `/?code=x` → `/auth/callback?code=x`.
+- `scripts/probar-anon.sh` contra producción: 8/8 RPCs 401, tablas `[]`.
+
+**Commits del plan:** `feat: auth, organization and phone-first shell`
+(9a46b62, deploy 1) · `feat: candidate submission and automatic
+calculation check` (bdee987) · `feat: AI-prepared observations with
+guard` (9df2a8f) · `feat: blind review and evidence file` (8bc8be3) ·
+`fix: contradictory AI-observation text and reviewer-facing wording in
+evidence file` (d430dea, deploy 2).
+
+**Pendiente tuyo para cerrar al 100%:**
+1. Login con Google al primer clic en incógnito sobre este deploy (no
+   puedo iniciar sesión con contraseñas).
+2. Con una **segunda cuenta de Google** unida a tu org (código de la
+   organización): revisar A-01 a ciegas y comprobar que no ve tu nombre
+   (y, si quieres, la respuesta de red); luego, con tu cuenta, ver el
+   expediente revisado.
+3. Probar "Solicitar eliminación de mi expediente" (borra todo; lo
+   tienes que hacer tú).
