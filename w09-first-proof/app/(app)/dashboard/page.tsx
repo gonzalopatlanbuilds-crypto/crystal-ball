@@ -20,6 +20,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     .returns<MiEntrega[]>();
   if (error) console.error("DashboardPage: no se pudieron leer las entregas", error);
 
+  // Bug reportado: el código solo se mostraba una vez, al crear la org, y
+  // una segunda cuenta terminó creando otra org en vez de unirse. RLS deja
+  // a cada miembro leer solo su propia org.
+  const { data: org } = await supabase.from("orgs").select("join_code").maybeSingle<{ join_code: string }>();
+
   return (
     <main className="space-y-4">
       <h1 className="text-lg font-semibold text-zinc-900">Inicio</h1>
@@ -59,6 +64,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           Ver entregas por revisar
         </Link>
       </section>
+
+      {org && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-zinc-900">Código de tu organización</h2>
+          <p className="mt-1 font-mono text-xl font-semibold tracking-wider text-zinc-900">{org.join_code}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Compártelo para que otra persona (candidata o revisora) se una a este mismo piloto. Quien entre sin
+            código y cree una organización nueva no podrá ver ni revisar estas entregas.
+          </p>
+        </section>
+      )}
 
       {entregas && entregas.length > 0 && (
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

@@ -649,3 +649,20 @@ revisor tienen que ser cuentas distintas.
 selector de cuentas. Build limpio y lint sin warnings; **pendiente
 verificarlo en producción** (necesita iniciar sesión con Google, lo
 pruebas tú).
+
+## 2026-10-11 — Bug: el código de la organización solo se veía una vez
+
+**Reportado por ti:** no recordabas el código. Solo aparecía al crear la
+organización. Consecuencia real: tu segunda cuenta (dej…@gmail.com) creó
+**otra** organización también llamada "SAD" (`QJM-KMW`) en vez de unirse a
+la tuya (`ZZH-TDH`, con A-01/A-02/A-03), así que no puede ver ni revisar
+A-01.
+
+**Arreglo en la app:** el inicio muestra "Código de tu organización" (RLS:
+cada miembro lee solo su propia org) con la advertencia de no crear otra.
+
+**Datos de producción — no los cambié:** mover el perfil de la segunda
+cuenta a `ZZH-TDH` y borrar la org vacía `QJM-KMW` (sin entregas ni
+revisiones, verificado con lectura) lo bloquearon los permisos de esta
+sesión por ser datos compartidos de producción. Quedó como paso tuyo en
+el SQL Editor.
