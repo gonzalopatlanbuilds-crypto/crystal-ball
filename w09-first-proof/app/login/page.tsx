@@ -42,7 +42,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-zinc-900">First Proof</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">First-Proof Finance MX</h1>
         <p className="mt-2 text-sm text-zinc-500">
           Resuelve un caso financiero ficticio, recibe una revisión humana
           a ciegas y obtén un expediente que muestra tu trabajo. Práctica:

@@ -56,7 +56,7 @@ const a = await as("A", `select * from create_org('Piloto Uno')`);
 const orgA = a.rows[0].org_id, code = a.rows[0].join_code;
 check("A crea org", !!orgA && /^[A-Z2-9]{3}-[A-Z2-9]{3}$/.test(code), a);
 check("B se une con código", !(await as("B", `select * from join_org($1)`, [code.toLowerCase()])).error);
-const orgC = (await as("C", `select * from create_org('Piloto Dos')`)).rows[0].org_id;
+await as("C", `select * from create_org('Piloto Dos')`);
 check("A no puede crear otra org", !!(await as("A", `select * from create_org('x')`)).error);
 
 const sA = await ins("A", orgA);

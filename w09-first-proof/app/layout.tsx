@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "First Proof",
+  title: "First-Proof Finance MX",
   description:
     "Expediente de evidencia para personas candidatas a puestos junior de finanzas: un caso ficticio, revisión humana a ciegas y lo que el expediente NO prueba.",
 };

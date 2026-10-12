@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:schema": "node scripts/probar-schema.mjs"
+    "test:schema": "node scripts/probar-schema.mjs",
+    "test:logica": "node scripts/probar-logica.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

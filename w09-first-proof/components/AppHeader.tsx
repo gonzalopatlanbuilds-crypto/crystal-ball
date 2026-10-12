@@ -10,7 +10,7 @@ export default function AppHeader({ email, orgName }: Props) {
     <header className="bg-teal-900 text-white print:hidden">
       <div className="mx-auto max-w-md px-4 py-3">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-lg font-semibold">First Proof</span>
+          <span className="text-lg font-semibold">First-Proof Finance MX</span>
           <span className="truncate text-sm text-teal-200">{orgName}</span>
         </div>
         {email && (

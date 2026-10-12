@@ -12,8 +12,9 @@ simulados" en todas las pantallas protegidas (`lib/avisos.ts`, texto en
 código, nunca de la IA). `/dashboard` es un shell vacío con el "cómo
 funciona".
 
-**Nombre "First Proof":** sale del nombre de la carpeta; el packet no
-nombra el producto. Cambiarlo es solo texto (`app/layout.tsx`,
+**Nombre "First Proof":** sale del nombre de la carpeta. *(Corrección
+posterior: el mockup 1 sí nombra el producto, "First-Proof Finance MX";
+se alineó en la Feature 2.)* Cambiarlo es solo texto (`app/layout.tsx`,
 `app/login/page.tsx`, `components/AppHeader.tsx`).
 
 **El piso de seguridad entero va en este commit, no solo auth.** El prompt
@@ -159,3 +160,65 @@ redirect URI de Supabase en Google Cloud. **Deploy 1 cerrado.** Pendiente
 menor: Site URL de Supabase todavía en localhost.
 
 **Siguiente paso:** Feature 2 (entrega del candidato y chequeo automático).
+
+## 2026-10-11 — Site URL de Supabase
+
+Cambiada de `http://localhost:3000` a
+`https://crystal-ball-w09-first-proof.vercel.app` (a petición tuya, desde
+el dashboard; verificada recargando la página). Lección 6 completa.
+
+## 2026-10-11 — Feature 2: entrega del candidato y chequeo automático
+
+**Qué cambió:** `/caso` (pantalla del mockup 1: tabla de Distribuidora
+Aurora, tres respuestas numéricas, explicación, "Enviar a revisión
+humana"), server action `enviarEntrega`, `/entregas/[id]` (vista del
+candidato sobre su entrega con el bloque de cálculos) y la lista "Tus
+entregas" en `/dashboard`. Nombre alineado con el mockup: "First-Proof
+Finance MX".
+
+**El caso vive en `lib/caso.ts` y las respuestas correctas se calculan de
+los datos**, no se escriben a mano: si alguien cambia una cifra de la
+tabla, la respuesta correcta cambia con ella. La prueba confirma que dan
+10.0 / 30.0 / 30.0, como el cálculo a mano del packet.
+
+**El chequeo se calcula al leer, no se guarda.** La base guarda solo las
+respuestas; `chequear()` compara contra `lib/caso.ts` cada vez que se
+muestra. Una sola fuente de verdad, y nada que el cliente pueda escribir.
+
+**Sin puntaje en ningún lado.** `chequear()` devuelve un resultado por
+cálculo ("correcto" / "no coincide" / "sin respuesta" + el valor
+correcto), nunca un total; la prueba revisa que no exista ningún campo
+tipo score/total. El bloque dice "Revisión automática, no es un juicio
+sobre ti" y va separado de la explicación.
+
+**Respuestas numéricas opcionales, explicación obligatoria.** El criterio
+de aceptación habla de respuestas "faltantes" que muestran el valor
+correcto, así que vacío es válido ("sin respuesta"). La explicación es lo
+que lee quien revisa: 80–800 caracteres, contados como `char_length` de
+Postgres (un emoji = 1).
+
+**Formato de números para teléfono en México:** se acepta coma decimal
+(`10,5`) y `%` al final. Se rechaza en vez de adivinar: `1e3`, `Infinity`,
+`NaN`, `1,234.5`, `0x10`. Se redondea a 2 decimales antes de guardar
+(`numeric(9,2)`), para que lo chequeado sea exactamente lo guardado.
+
+**Los errores no borran lo escrito:** el server action regresa los
+valores originales y el formulario se re-monta con `key` (React 19
+resetea un `<form action>` después de enviarlo, y sin la `key` los
+`defaultValue` no se vuelven a aplicar).
+
+**Decisión abierta: ¿una sola entrega por candidato?** Hoy se permiten
+varias (cada una con su seudónimo). Riesgo: alguien ve los valores
+correctos y vuelve a entregar. No hay puntaje, así que el daño es bajo;
+lo dejo así salvo que prefieras limitarlo.
+
+**Pruebas:** `npm run test:logica` (nuevo) 31/31 — respuestas correctas,
+tolerancia ±0.05 en los bordes (con margen de punto flotante: 30.05 −
+30 = 0.0500000000000007), strings de `numeric`, vacíos, formatos
+rechazados, límites 79/80/800/801, errores por campo.
+`npm run test:schema` 49/49. Build limpio y lint sin warnings.
+
+**NO probado todavía:** el flujo en el navegador (enviar, ver errores
+bajo cada campo con lo escrito conservado, ver el resultado) ni nada en
+producción. Necesita login con Google, así que es prueba tuya después del
+deploy.
