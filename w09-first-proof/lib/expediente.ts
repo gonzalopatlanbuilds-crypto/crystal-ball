@@ -75,3 +75,22 @@ export function fechaRevision(iso: string): string {
     minute: "2-digit",
   });
 }
+
+// Lo que viene de la base (jsonb) se valida antes de pintarlo.
+export function leerDecisiones(v: unknown): Record<string, DecisionObservacion> {
+  const salida: Record<string, DecisionObservacion> = {};
+  if (!v || typeof v !== "object" || Array.isArray(v)) return salida;
+  for (const [id, d] of Object.entries(v as Record<string, unknown>)) {
+    if (!d || typeof d !== "object") continue;
+    const { decision, motivo } = d as { decision?: unknown; motivo?: unknown };
+    if (decision !== "confirmada" && decision !== "descartada") continue;
+    salida[id] = typeof motivo === "string" && motivo ? { decision, motivo } : { decision };
+  }
+  return salida;
+}
+
+export function leerObservaciones(v: unknown): { id: string; texto: string }[] | null {
+  if (!Array.isArray(v)) return null;
+  const ok = v.every((o) => o && typeof o === "object" && typeof o.id === "string" && typeof o.texto === "string");
+  return ok ? (v as { id: string; texto: string }[]) : null;
+}

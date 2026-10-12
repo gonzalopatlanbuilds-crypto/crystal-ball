@@ -9,8 +9,8 @@ interface MiEntrega {
   status: "pending_review" | "reviewed";
 }
 
-// La Feature 4 agrega aquí la lista de entregas pendientes de revisión.
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
+  const { borrado } = await searchParams;
   const supabase = await createClient();
   // RLS: solo las propias.
   const { data: entregas, error } = await supabase
@@ -23,6 +23,11 @@ export default async function DashboardPage() {
   return (
     <main className="space-y-4">
       <h1 className="text-lg font-semibold text-zinc-900">Inicio</h1>
+      {borrado === "1" && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          Se borraron todas tus entregas, sus revisiones y tu expediente.
+        </p>
+      )}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-zinc-900">Cómo funciona</h2>
@@ -42,6 +47,19 @@ export default async function DashboardPage() {
         </p>
       </section>
 
+      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-zinc-900">Revisar a otras personas</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Revisa a ciegas la entrega de alguien más del piloto. Nunca verás su nombre ni tus propias entregas.
+        </p>
+        <Link
+          href="/revisar"
+          className="mt-3 block rounded-xl border border-teal-800 px-4 py-2.5 text-center text-sm font-medium text-teal-800 hover:bg-teal-50"
+        >
+          Ver entregas por revisar
+        </Link>
+      </section>
+
       {entregas && entregas.length > 0 && (
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-zinc-900">Tus entregas</h2>
@@ -56,7 +74,11 @@ export default async function DashboardPage() {
                     )}
                   </span>
                   <span className="text-zinc-500">
-                    {e.status === "pending_review" ? "pendiente de revisión" : "revisada"}
+                    {e.attempt_number !== 1
+                      ? "práctica, no se revisa"
+                      : e.status === "pending_review"
+                        ? "expediente · pendiente de revisión"
+                        : "expediente · revisado"}
                   </span>
                 </Link>
               </li>

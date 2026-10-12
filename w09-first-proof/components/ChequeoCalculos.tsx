@@ -7,14 +7,14 @@ export default function ChequeoCalculos({ resultados }: { resultados: ResultadoC
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
       <h2 className="text-sm font-semibold text-zinc-900">Cálculos</h2>
-      <p className="text-xs text-zinc-500">Revisión automática, no es un juicio sobre ti.</p>
+      <p className="text-xs text-zinc-500">Revisión automática: solo compara números, no es un juicio sobre la persona.</p>
       <ul className="mt-3 space-y-3">
         {resultados.map((r) => (
           <li key={r.clave} className="text-sm">
             <p className="text-zinc-700">{r.etiqueta}</p>
             <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
               <span className="tabular-nums text-zinc-900">
-                Tu respuesta: {r.respuesta === null ? "—" : formatoDecimal(r.respuesta)}
+                Respuesta: {r.respuesta === null ? "—" : formatoDecimal(r.respuesta)}
               </span>
               {r.estado === "correcto" ? (
                 <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-800">
