@@ -94,6 +94,12 @@ check("guardia: observaciones descriptivas pasan", pasa(buenas), revisarObservac
 check("guardia: cifras de la hoja de datos pasan", pasa(["Menciona que los ingresos pasaron de 4,200,000 a 4,620,000.", "Usa la fórmula con 90 días."]),
   revisarObservaciones(["Menciona que los ingresos pasaron de 4,200,000 a 4,620,000.", "Usa la fórmula con 90 días."]));
 check("guardia: 'Señala' con acento cuenta como verbo válido", pasa(["Señala que la cobranza es más lenta.", "No compara T1 con T2."]));
+const dosTrim = ["Señala que el margen bruto disminuyó entre los dos trimestres.", "No compara T1 con T2."];
+check("guardia: 'entre los dos trimestres' no cuenta como cifra", pasa(dosTrim), revisarObservaciones(dosTrim));
+const especifica = ["No especifica qué elemento revisaría primero.", "Menciona que el margen bruto disminuyó."];
+check("guardia: 'No especifica' es verbo válido (salida real descartada en ronda 3)", pasa(especifica), revisarObservaciones(especifica));
+const noventa = ["Usa la fórmula de noventa días.", "Identifica un aumento en los días de cobranza."];
+check("guardia: 'noventa' (fórmula) y 'un aumento' pasan", pasa(noventa), revisarObservaciones(noventa));
 const malas: [string, unknown][] = [
   ["puntaje", ["Menciona el margen. Calificación: alta.", "No cuantifica nada."]],
   ["10 de 10", ["Menciona todo, merece 10 de 10.", "No cuantifica nada."]],
@@ -115,6 +121,11 @@ const malas: [string, unknown][] = [
   ["cinco", ["Menciona a.", "Menciona b.", "Menciona c.", "Menciona d.", "Menciona e."].map((x) => x + " del caso")],
   ["no es lista", "Menciona el margen."],
   ["muy larga", ["Menciona " + "el margen ".repeat(30), "No cuantifica nada."]],
+  // Encontrados en la prueba real con Haiku (ver DECISIONS.md):
+  ["cifra en palabras: 'diez por ciento'", ["Menciona que los ingresos crecieron aproximadamente diez por ciento.", "No cuantifica nada."]],
+  ["cifra en palabras: 'dos puntos porcentuales'", ["Señala que el margen bruto disminuyó en dos puntos porcentuales.", "No cuantifica nada."]],
+  ["cifra en palabras: 'treinta días'", ["Menciona treinta días de cobranza.", "No cuantifica nada."]],
+  ["'experiencia laboral'", ["Incluye información sobre experiencia laboral.", "No cuantifica nada."]],
 ];
 for (const [nombre, obs] of malas) {
   check(`guardia rechaza: ${nombre}`, !pasa(obs), revisarObservaciones(obs));

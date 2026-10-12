@@ -26,7 +26,7 @@ function normalizar(texto: string): string {
 // buena explicación").
 const INICIOS = [
   "menciona", "explica", "describe", "cuantifica", "propone", "identifica",
-  "compara", "relaciona", "senala", "incluye", "usa", "atribuye", "se refiere",
+  "compara", "relaciona", "senala", "incluye", "usa", "atribuye", "se refiere", "especifica",
 ];
 
 const PROHIBIDOS: { patron: RegExp; motivo: string }[] = [
@@ -35,7 +35,16 @@ const PROHIBIDOS: { patron: RegExp; motivo: string }[] = [
   { patron: /\b(excelente|sobresaliente|deficiente|insuficiente|mediocre|pobre|brillante|impecable|perfect[oa]|buen[oa]?s?|mal[oa]?s?|bien hecho|muy bien|destaca\w*|fuerte|debil)\b/, motivo: "hace un juicio de calidad" },
   // El chequeo de cálculos es del sistema, no de la IA.
   { patron: /\b(correct\w*|incorrect\w*|acert\w*|equivoc\w*|errone\w*|error(es)?)\b/, motivo: "juzga si algo está bien o mal" },
-  { patron: /\b(contrat\w*|emple(o|os|ador|adores|abilidad|able|ables)|trabajo\w*|puesto\w*|vacante\w*|entrevist\w*|reclut\w*|seleccion\w*|idone\w*|recomend\w*|recomiend\w*|salario\w*|sueldo\w*|candidat\w*)\b/, motivo: "usa lenguaje de contratación o empleo" },
+  { patron: /\b(contrat\w*|emple(o|os|ador|adores|abilidad|able|ables)|trabajo\w*|puesto\w*|vacante\w*|entrevist\w*|reclut\w*|seleccion\w*|idone\w*|recomend\w*|recomiend\w*|salario\w*|sueldo\w*|candidat\w*|laboral\w*)\b/, motivo: "usa lenguaje de contratación o empleo" },
+  // Prueba real con Haiku: escribió "aproximadamente diez por ciento" y
+  // "dos puntos porcentuales": una cifra en palabras se saltaba la regla de
+  // cifras, que solo buscaba dígitos. "Los dos trimestres" sí se permite (no
+  // es una cifra del caso, es cuántos trimestres hay) y "noventa" también,
+  // como el 90 de la fórmula.
+  {
+    patron: /\b(tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\w+|veinte|veinti\w+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|cien|ciento|cientos|\w+cientos|mil|miles|millon\w*|por ciento|porcentuales|punto porcentual|dos(?!\s+(trimestres|periodos)\b))\b/,
+    motivo: "escribe una cifra con palabras",
+  },
 ];
 
 // Las únicas cifras permitidas son las de la hoja de datos del caso (y el

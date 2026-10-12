@@ -36,7 +36,10 @@ for (let r = 1; r <= rondas; r++) {
     console.log(`\n--- ${nombre} → ${res.estado}${res.estado === "ok" ? ` (intento ${res.intentos})` : ""}`);
     if (res.estado === "ok") {
       ok++;
-      if (res.intentos > 1) segundoIntento++;
+      if (res.intentos > 1) {
+        segundoIntento++;
+        console.log(`  (intento 1 rechazado: ${res.rechazos[0]?.join(" | ")})`);
+      }
       // Doble chequeo: lo que se guardaría vuelve a pasar la guardia.
       if (revisarObservaciones(res.observaciones.map((o) => o.texto)).length) console.log("  !!! no pasa la guardia al re-chequear");
       for (const o of res.observaciones) console.log(`  ${o.id}: ${o.texto}`);
