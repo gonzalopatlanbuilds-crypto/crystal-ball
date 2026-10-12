@@ -108,3 +108,51 @@ llave pública sigue siendo obligatoria.
    Vercel (`https://<proyecto>.vercel.app` y `…/auth/callback`).
 6. Llenar `.env.local` y correr `bash scripts/probar-anon.sh`; yo verifico
    Deployment Protection con `curl` desde fuera.
+
+## 2026-10-11 — Deploy 1: dos problemas de configuración (Vercel y Supabase)
+
+**URL de producción (alias usado en Supabase):**
+`https://crystal-ball-w09-first-proof.vercel.app`. (`w09-first-proof.vercel.app`
+da 404: no es nuestro, igual que pasó en w08.)
+
+**Problema 1 — el build fallaba con "No Output Directory named 'public'".**
+El proyecto de Vercel se creó cuando la carpeta `w09-first-proof` en GitHub
+solo tenía `docs/` y `assets/` (commit bfe191d), así que Vercel detectó el
+framework como "Other". Después el proyecto ya decía Next.js, pero el
+deploy de producción seguía con el preset "Other" ("Production
+Overrides"), que busca una carpeta `public/`. Se arregló con **Redeploy**
+de e3c3736, que usa la configuración actual del proyecto. Diagnóstico
+hecho en el dashboard de Vercel (log del build y panel de overrides), no
+adivinado.
+
+**Además, nombres de proyectos cruzados en Vercel:** había un proyecto
+llamado `w09-first-proof` cuyo Root Directory era `w02-el-traductor`
+(dominio `crystal-ball-psi.vercel.app`), y el de w09 real se llamaba
+`crystal-ball-w09-first-proof`. Se renombraron a `w02-el-traductor` y
+`w09-first-proof` (decisión tuya: renombrar, no borrar). Renombrar no
+cambia los dominios: se verificó con curl que ambos siguen respondiendo
+igual después del cambio.
+
+**Problema 2 — Supabase con Site URL `http://localhost:3000` y sin
+Redirect URLs.** El login en producción habría regresado a localhost. Tú
+agregaste las Redirect URLs (producción y localhost `/auth/callback`,
+verificado en el dashboard). **La Site URL sigue en localhost**: no rompe
+el login porque el redirect sí está en la lista, pero la lección 6 pide el
+alias de producción ahí también.
+
+**Verificado desde fuera con curl, sin sesión:**
+- `/login` → 200, título "First Proof", sin muro de login de Vercel →
+  **Deployment Protection apagado** (también se ve "Disabled" en la
+  configuración del deploy).
+- `/dashboard` y `/` → 307 a `/login`.
+- `/?code=x` → 307 a `/auth/callback?code=x` (lección 3).
+- `/auth/callback?code=falso` → `/login?error=auth`: el servidor sí llega a
+  Supabase, o sea que las env vars están en producción (nombres exactos
+  confirmados en Vercel; los valores están cifrados y no se revisaron).
+- Proveedor Google activo (`/auth/v1/settings` → `google: true`) y
+  `/auth/v1/authorize` redirige a Google con
+  `redirect_uri=https://vzrjpntpglybinaptogi.supabase.co/auth/v1/callback`.
+
+**NO verificado todavía:** login con Google al primer clic en incógnito
+en producción (prueba tuya). Es lo único que confirma que Google Cloud
+tiene autorizado el redirect URI de Supabase.
