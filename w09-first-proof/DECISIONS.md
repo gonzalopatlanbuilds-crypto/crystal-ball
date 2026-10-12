@@ -432,3 +432,55 @@ sesión (no en el repo).
 
 **Siguiente:** push y prueba en producción: enviar un caso y ver que las
 observaciones se guarden (confirma que Vercel tiene las dos llaves).
+
+## 2026-10-11 — Feature 3 verificada en producción (con Chrome)
+
+Con tu sesión, en `https://crystal-ball-w09-first-proof.vercel.app`,
+deploy `2f47e89`:
+- **Validación (criterio de la Feature 2, no probado antes en navegador):**
+  margen "3o" y explicación de 13 caracteres → "Escribe solo un
+  número, por ejemplo 12.5" bajo el margen y "Escribe al menos 80
+  caracteres (llevas 13)" bajo la explicación; lo escrito se conservó
+  (incluido "10,0" con coma decimal).
+- **Entrega válida** (10,0 / 30 / 22.5 a propósito) → A-03, "Intento 3:
+  reenvío", dos "correcto" y "no coincide · valor correcto: 30.0".
+- **3 observaciones de IA guardadas** (Haiku + guardia + service role en
+  Vercel): "Menciona que los ingresos crecieron y que el costo de ventas
+  creció a un ritmo mayor." / "Señala que las cuentas por cobrar
+  aumentaron desproporcionadamente respecto a las ventas." / "Propone
+  revisar primero las condiciones de crédito y los descuentos como
+  acciones a tomar." Etiqueta fija de la página visible.
+
+Nota de método: un primer intento de llenar el formulario con Chrome dejó
+los campos vacíos porque escribí antes de que la página terminara de
+cargar; no era un bug de la app (al repetirlo, todo se conservó).
+
+## 2026-10-11 — Feature 4 (parte 1): base de datos y lógica; falta la UI
+
+**Hecho (sin pantallas todavía):**
+- `sql/schema.sql`: la cola de revisión (`blind_pending_submissions`,
+  `blind_submission`, `submit_review`) solo acepta el **intento 1** (la
+  evidencia); los reenvíos son práctica. `submit_review` exige una
+  decisión válida por cada observación de IA (`{decision: confirmada |
+  descartada, motivo?}`, motivo ≤ 120 y solo en descartadas), y rechaza
+  decisiones sobre observaciones inexistentes. Nueva
+  `borrar_mis_entregas()`: borra todas las entregas del candidato (sus
+  revisiones caen por cascada) y reinicia su contador de intentos a 1; si
+  no, tras borrar todo nunca volvería a haber un intento 1. Trade-off:
+  alguien podría borrar todo tras ver las respuestas y empezar de nuevo;
+  el bloque "NO prueba" ya dice que no prueba que lo hizo sin ayuda.
+- `lib/expediente.ts`: textos fijos ("NO prueba", "Quién puede verlo",
+  "Real y simulado"), recomendaciones (sin "rechazar") y `mapaCriterios`
+  (criterio → evidencia → quién lo juzgó; C1 sistema, C2/C3 humano o
+  "pendiente"; sin conteos).
+- `lib/validacion-revision.ts`: validación server-side del formulario.
+- Pruebas: `test:schema` 74/74 (18 nuevas: cola solo intento 1, decisiones,
+  motivos, borrar todo, reinicio de intentos), `test:logica` 87/87.
+
+**Pendiente:** pantallas `/revisar` y `/revisar/[id]` (formulario y
+chequeo amistoso revisor ≠ candidato en el server action), el expediente
+del mockup 2 en `/entregas/[id]` para el intento 1, botón de eliminación
+(sin `confirm()`), build/lint, re-correr `sql/schema.sql` en Supabase,
+push y prueba en producción. Probar la revisión en producción requiere una
+**segunda cuenta de Google** en la misma org (no puedo crear cuentas).
+Después: Feature 5.

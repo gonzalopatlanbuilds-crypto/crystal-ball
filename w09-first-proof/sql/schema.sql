@@ -423,6 +423,9 @@ as $$
   where auth.uid() is not null
     and s.org_id = public.my_org_id()
     and s.status = 'pending_review'
+    -- Solo el intento 1 es evidencia (lib/intentos.ts, elegirEvidencia):
+    -- los reenvíos son práctica y no gastan tiempo de quien revisa.
+    and s.attempt_number = 1
     and s.candidate_id <> auth.uid()
   order by s.pseudonym;
 $$;
@@ -456,7 +459,7 @@ as $$
     and s.org_id = public.my_org_id()
     and s.candidate_id <> auth.uid()
     and (
-      s.status = 'pending_review'
+      (s.status = 'pending_review' and s.attempt_number = 1)
       or exists (
         select 1 from public.reviews r
         where r.submission_id = s.id and r.reviewer_id = auth.uid()
@@ -482,6 +485,9 @@ as $$
 declare
   v_org uuid := public.my_org_id();
   v_review_id uuid;
+  v_obs jsonb;
+  v_o jsonb;
+  v_d jsonb;
 begin
   if auth.uid() is null or v_org is null then
     raise exception 'Se requiere sesión y organización.';
@@ -489,12 +495,34 @@ begin
 
   -- Lock de la entrega: dos revisores al mismo tiempo no pueden firmar la
   -- misma (además del unique de reviews.submission_id).
-  perform 1 from public.submissions
+  select ai_observations into v_obs from public.submissions
     where id = p_submission_id and org_id = v_org and status = 'pending_review'
+      and attempt_number = 1
     for update;
   if not found then
     raise exception 'La entrega no existe o ya fue revisada.';
   end if;
+
+  -- Cada observación de IA necesita una decisión humana (confirmada o
+  -- descartada, con motivo opcional) y no se aceptan decisiones sobre
+  -- observaciones que no existen. Misma regla que lib/validacion-revision.ts.
+  if jsonb_typeof(coalesce(p_observation_decisions, '{}'::jsonb)) <> 'object' then
+    raise exception 'Decisiones inválidas.';
+  end if;
+  if (select count(*) from jsonb_object_keys(coalesce(p_observation_decisions, '{}'::jsonb)))
+     <> coalesce(jsonb_array_length(v_obs), 0) then
+    raise exception 'Falta decidir alguna observación, o sobra alguna.';
+  end if;
+  for v_o in select * from jsonb_array_elements(coalesce(v_obs, '[]'::jsonb)) loop
+    v_d := p_observation_decisions -> (v_o ->> 'id');
+    if v_d is null
+       or jsonb_typeof(v_d) <> 'object'
+       or coalesce(v_d ->> 'decision', '') not in ('confirmada', 'descartada')
+       or char_length(coalesce(v_d ->> 'motivo', '')) > 120
+       or (v_d ->> 'decision' = 'confirmada' and coalesce(v_d ->> 'motivo', '') <> '') then
+      raise exception 'Decisión inválida para la observación %.', v_o ->> 'id';
+    end if;
+  end loop;
 
   insert into public.reviews (
     submission_id, org_id, reviewer_id, observation_decisions,
@@ -512,3 +540,34 @@ $$;
 
 revoke all on function public.submit_review(uuid, jsonb, text, text, text) from public, anon;
 grant execute on function public.submit_review(uuid, jsonb, text, text, text) to authenticated;
+
+-- ============================================================
+-- Feature 4: "Solicitar eliminación de mi expediente". Borra TODAS las
+-- entregas del candidato (sus revisiones caen por cascada y el expediente
+-- se arma al leer, así que deja de existir) y reinicia su contador de
+-- intentos: si no, después de borrar todo nunca podría volver a tener un
+-- intento 1, que es la única entrega que cuenta como evidencia. Los
+-- seudónimos de la org siguen sin reusarse.
+-- ============================================================
+
+create or replace function public.borrar_mis_entregas()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n int;
+begin
+  if auth.uid() is null then
+    raise exception 'Se requiere sesión.';
+  end if;
+  delete from public.submissions where candidate_id = auth.uid();
+  get diagnostics v_n = row_count;
+  update public.profiles set next_attempt = 1 where id = auth.uid();
+  return v_n;
+end;
+$$;
+
+revoke all on function public.borrar_mis_entregas() from public, anon;
+grant execute on function public.borrar_mis_entregas() to authenticated;

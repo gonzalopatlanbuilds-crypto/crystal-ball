@@ -100,7 +100,8 @@ check("blind_submission sin campos de identidad", r.rows.length === 1 && !Object
 r = await as("A", `select * from blind_submission($1)`, [idA]);
 check("blind_submission no devuelve la propia", r.rows.length === 0, r);
 
-const rev = (who, id) => as(who, `select submit_review($1, '{"o1":"confirmada"}', 'Ninguno', 'conversar', 'Explica bien el cambio en cobranza.') as id`, [id]);
+// Sin observaciones de IA, las decisiones van vacías ({}).
+const rev = (who, id) => as(who, `select submit_review($1, '{}', 'Ninguno', 'conversar', 'Explica bien el cambio en cobranza.') as id`, [id]);
 r = await rev("A", idA);
 check("TRIGGER: A no puede revisar su propia entrega", /No puedes revisar tu propia entrega/.test(r.error), r);
 r = await as("A", `insert into reviews (submission_id, org_id, reviewer_id, conflict_declaration, recommendation, note) values ($1,$2,$3,'Ninguno','conversar','x')`, [idB, orgA, U.A]);
@@ -157,7 +158,56 @@ r = await as("A", `select * from blind_pending_submissions()`);
 check("la lista ciega no expone attempt_number", r.rows.every((x) => !("attempt_number" in x)), r);
 
 const fns = [["create_org", "'x'"], ["join_org", "'ABC-234'"], ["my_org_id", ""], ["generar_join_code", ""],
-  ["blind_pending_submissions", ""], ["blind_submission", `'${idA}'`], ["submit_review", `'${idA}','{}','x','conversar','x'`]];
+  ["blind_pending_submissions", ""], ["blind_submission", `'${idA}'`], ["submit_review", `'${idA}','{}','x','conversar','x'`], ["borrar_mis_entregas", ""]];
+// ---------- Feature 4 ----------
+// Org nueva para no mezclar con lo anterior: D candidata, E revisora.
+U.D = "dddddddd-0000-0000-0000-000000000004"; U.E = "eeeeeeee-0000-0000-0000-000000000005";
+for (const k of ["D", "E"]) await db.query(`insert into auth.users values ($1, $2)`, [U[k], `${k}@test.mx`]);
+const o2 = await as("D", `select * from create_org('Piloto F4')`);
+const orgD = o2.rows[0].org_id;
+await as("E", `select * from join_org($1)`, [o2.rows[0].join_code]);
+const d1 = (await ins("D", orgD)).rows[0];
+const d2 = (await ins("D", orgD)).rows[0];
+check("D: intentos 1 y 2", d1.attempt_number === 1 && d2.attempt_number === 2, [d1, d2]);
+// Observaciones como las escribe el servidor (service role = superusuario aquí).
+await db.query(`update submissions set ai_observations = '[{"id":"o1","texto":"Menciona el margen."},{"id":"o2","texto":"No cuantifica la cobranza."}]' where id = $1`, [d1.id]);
+
+r = await as("E", `select id from blind_pending_submissions()`);
+check("cola de revisión: solo el intento 1 (el reenvío no entra)", r.rows.length === 1 && r.rows[0].id === d1.id, r);
+r = await as("E", `select * from blind_submission($1)`, [d2.id]);
+check("blind_submission no abre un reenvío pendiente", r.rows.length === 0, r);
+r = await as("E", `select submit_review($1, '{}', 'Ninguno', 'conversar', 'x')`, [d2.id]);
+check("submit_review rechaza un reenvío", /no existe o ya fue revisada/.test(r.error), r);
+
+const revD = (dec) => as("E", `select submit_review($1, $2::jsonb, 'Ninguno', 'mas_evidencia', 'Falta cuantificar.') as id`, [d1.id, JSON.stringify(dec)]);
+r = await revD({ o1: { decision: "confirmada" } });
+check("falta decidir una observación → rechazo", /Falta decidir/.test(r.error), r);
+r = await revD({ o1: { decision: "confirmada" }, o2: { decision: "confirmada" }, o9: { decision: "confirmada" } });
+check("decisión sobre observación inexistente → rechazo", /Falta decidir|sobra/.test(r.error), r);
+r = await revD({ o1: { decision: "confirmada" }, o2: { decision: "aprobada" } });
+check("decisión que no es confirmada/descartada → rechazo", /Decisión inválida/.test(r.error), r);
+r = await revD({ o1: { decision: "confirmada", motivo: "x" }, o2: { decision: "descartada" } });
+check("motivo en una confirmada → rechazo", /Decisión inválida/.test(r.error), r);
+r = await revD({ o1: { decision: "confirmada" }, o2: { decision: "descartada", motivo: "x".repeat(121) } });
+check("motivo de más de 120 → rechazo", /Decisión inválida/.test(r.error), r);
+r = await revD({ o1: { decision: "confirmada" }, o2: { decision: "descartada", motivo: "No aparece en el texto." } });
+check("revisión válida con una confirmada y una descartada", !r.error && r.rows[0].id, r);
+r = await as("D", `select observation_decisions->'o2'->>'motivo' m, recommendation from reviews`);
+check("D ve la decisión y el motivo en su revisión", r.rows[0]?.m === "No aparece en el texto." && r.rows[0].recommendation === "mas_evidencia", r);
+
+r = await as("E", `select borrar_mis_entregas() n`);
+check("borrar_mis_entregas de E no toca lo de D", r.rows[0].n === 0, r);
+r = await as("D", `select count(*)::int n from submissions`);
+check("D sigue con sus 2 entregas", r.rows[0].n === 2, r);
+r = await as("D", `select borrar_mis_entregas() n`);
+check("D borra todo: 2 entregas", r.rows[0].n === 2, r);
+const quedanD = (await db.query(`select (select count(*)::int from submissions where candidate_id=$1) s, (select count(*)::int from reviews where submission_id=$2) r`, [U.D, d1.id])).rows[0];
+check("borrar todo elimina entregas y revisión", quedanD.s === 0 && quedanD.r === 0, quedanD);
+r = await as("E", `select * from blind_submission($1)`, [d1.id]);
+check("la revisora ya no puede abrir el expediente borrado", r.rows.length === 0, r);
+const d3 = (await ins("D", orgD)).rows[0];
+check("tras borrar todo, la siguiente entrega vuelve a ser intento 1 (seudónimo nuevo)", d3.attempt_number === 1 && d3.pseudonym === "A-03", d3);
+
 for (const [fn, args] of fns) {
   r = await as("anon", `select * from ${fn}(${args})`);
   check(`anon no ejecuta ${fn}`, /permission denied/.test(r.error), r);

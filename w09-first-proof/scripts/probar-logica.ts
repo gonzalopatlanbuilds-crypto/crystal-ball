@@ -4,6 +4,8 @@ import { CALCULOS, chequear } from "../lib/caso.ts";
 import { leerNumero, validarEntrega } from "../lib/validacion.ts";
 import { elegirEvidencia, etiquetaIntento } from "../lib/intentos.ts";
 import { revisarObservaciones } from "../lib/guardia-observaciones.ts";
+import { mapaCriterios, NO_PRUEBA, nombreRevisor } from "../lib/expediente.ts";
+import { validarRevision } from "../lib/validacion-revision.ts";
 
 let ok = 0;
 let fail = 0;
@@ -130,6 +132,47 @@ const malas: [string, unknown][] = [
 for (const [nombre, obs] of malas) {
   check(`guardia rechaza: ${nombre}`, !pasa(obs), revisarObservaciones(obs));
 }
+
+// Feature 4: mapa de criterios (matching logic) y validación de revisión.
+const sinRevision = mapaCriterios(null);
+check("criterios: C1 siempre lo juzga el sistema",
+  sinRevision[0].id === "C1" && sinRevision[0].juzgadoPor === "Sistema (automático)" && !sinRevision[0].pendiente);
+check("criterios: sin revisión, C2 y C3 quedan pendientes", sinRevision.slice(1).every((f) => f.pendiente && /Pendiente/.test(f.juzgadoPor)));
+const conRevision = mapaCriterios("Ana Revisora");
+check("criterios: con revisión, C2 y C3 los juzga esa persona",
+  conRevision.slice(1).every((f) => !f.pendiente && f.juzgadoPor === "Revisión humana: Ana Revisora"));
+check("criterios: cada uno apunta a su evidencia", conRevision.every((f) => /Bloque \d/.test(f.evidencia)));
+check("criterios: ningún texto resume a la persona en un número",
+  conRevision.every((f) => !/\d+\s*(de|\/)\s*\d+/.test(`${f.texto} ${f.evidencia} ${f.juzgadoPor}`)));
+check("nombreRevisor sin nombre → genérico",
+  nombreRevisor("  ") === "Persona revisora del piloto" && nombreRevisor(null) === "Persona revisora del piloto");
+check("bloque NO prueba: dice que no se envió a ningún empleador", NO_PRUEBA.some((t) => /ningún empleador/.test(t)));
+
+const base = {
+  idsObservaciones: ["o1", "o2"],
+  decisiones: { o1: "confirmada", o2: "descartada" } as Record<string, string>,
+  motivos: { o2: "No aparece en el texto." } as Record<string, string>,
+  conflictoTipo: "ninguno",
+  conflictoTexto: "",
+  recomendacion: "conversar",
+  nota: "Explica bien; falta cuantificar.",
+};
+const rv = validarRevision(base);
+check("revisión válida",
+  rv.ok && rv.datos.conflicto === "Ninguno" && rv.datos.decisiones.o2.motivo === "No aparece en el texto." && !("motivo" in rv.datos.decisiones.o1), rv);
+check("revisión: falta decidir una observación", !validarRevision({ ...base, decisiones: { o1: "confirmada" } }).ok);
+check("revisión: decisión inventada", !validarRevision({ ...base, decisiones: { o1: "aprobada", o2: "descartada" } }).ok);
+const conMotivoEnConfirmada = validarRevision({ ...base, motivos: { o1: "x" } });
+check("revisión: el motivo de una confirmada se ignora", conMotivoEnConfirmada.ok && !("motivo" in conMotivoEnConfirmada.datos.decisiones.o1));
+check("revisión: motivo > 120", !validarRevision({ ...base, motivos: { o2: "x".repeat(121) } }).ok);
+check("revisión: conflicto sin declarar", !validarRevision({ ...base, conflictoTipo: "" }).ok);
+check("revisión: 'sí tengo conflicto' sin texto", !validarRevision({ ...base, conflictoTipo: "si", conflictoTexto: "  " }).ok);
+const conConflicto = validarRevision({ ...base, conflictoTipo: "si", conflictoTexto: "Fui su compañero" });
+check("revisión: conflicto con texto", conConflicto.ok && conConflicto.datos.conflicto === "Fui su compañero");
+check("revisión: no existe 'rechazar'", !validarRevision({ ...base, recomendacion: "rechazar" }).ok);
+check("revisión: nota vacía", !validarRevision({ ...base, nota: "   " }).ok);
+check("revisión: nota de 401", !validarRevision({ ...base, nota: "x".repeat(401) }).ok);
+check("revisión: sin observaciones de IA no pide decisiones", validarRevision({ ...base, idsObservaciones: [], decisiones: {} }).ok);
 
 console.log(`\n${ok} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
