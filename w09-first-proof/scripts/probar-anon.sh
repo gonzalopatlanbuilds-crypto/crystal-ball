@@ -34,5 +34,6 @@ rpc validar_revision '{}'
 rpc blind_pending_submissions '{}'
 rpc blind_submission "{\"p_id\":\"$Z\"}"
 rpc submit_review "{\"p_submission_id\":\"$Z\",\"p_observation_decisions\":{},\"p_conflict_declaration\":\"x\",\"p_recommendation\":\"conversar\",\"p_note\":\"x\"}"
+rpc borrar_mis_entregas "{}"
 for t in orgs profiles submissions reviews; do tabla $t; done
 rm -f /tmp/anon.$$
