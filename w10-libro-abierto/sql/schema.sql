@@ -432,3 +432,252 @@ $$;
 
 revoke all on function public.sembrar_supuestos_ejemplo() from public, anon;
 grant execute on function public.sembrar_supuestos_ejemplo() to authenticated;
+
+-- ============================================================
+-- Feature 4: evidencia de pagador, compuerta de viabilidad, publicar y
+-- libro público.
+-- ============================================================
+
+-- Organización oficial: la única cuyo libro se publica y se muestra en
+-- /financiamiento. El cliente no tiene ningún privilegio de escritura en
+-- organizations (Feature 1) y create_org() no toca esta columna, así que
+-- solo se cambia desde el SQL Editor.
+alter table public.organizations
+  add column if not exists es_oficial boolean not null default false;
+
+-- Tipos de evidencia: lista cerrada (lib/pagador.ts). Ningún tipo es
+-- comisión, afiliado ni referido (Condición 5).
+do $$
+begin
+  alter table public.payer_evidence
+    add constraint payer_evidence_kind_list
+    check (kind in ('carta_intencion', 'convenio_firmado', 'pago_recibido', 'presupuesto_aprobado', 'otro'));
+exception when duplicate_object then null;
+end;
+$$;
+
+-- La fecha del documento no puede ser futura (un día de margen por zona
+-- horaria, igual que lib/pagador.ts) ni absurda.
+do $$
+begin
+  alter table public.payer_evidence
+    add constraint payer_evidence_recorded_on_range
+    check (recorded_on >= date '1990-01-01' and recorded_on <= current_date + 1);
+exception when duplicate_object then null;
+end;
+$$;
+
+-- La evidencia no se edita ni se borra desde la app: es un registro. Una
+-- corrección es un registro nuevo.
+revoke update, delete, truncate on public.payer_evidence from authenticated;
+
+-- ---------- Viabilidad, calculada también en SQL ----------
+-- Misma regla que lib/viabilidad.ts. La base NO confía en el valor que
+-- manda el servidor: lo recalcula y rechaza si no coincide.
+--   NOT_DEMONSTRATED: no hay evidencia de pagador.
+--   EVIDENCE_RECORDED_NOT_SUPPORTED: hay evidencia, pero falta algún
+--     insumo, alguno no está sustentado, o el 10:1 no se cumple.
+--   SUPPORTED: evidencia + los 8 insumos sustentados + 10:1 cumplido.
+-- 10:1 en numeric exacto: pérdida evitada >= 10 × precio mensual × 12.
+create or replace function public.estado_viabilidad(p_org_id uuid)
+returns text
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_sustentados int;
+  v_perdida numeric;
+  v_precio numeric;
+begin
+  if not exists (select 1 from public.payer_evidence where org_id = p_org_id) then
+    return 'NOT_DEMONSTRATED';
+  end if;
+
+  select count(*) into v_sustentados
+    from public.assumptions
+    where org_id = p_org_id and status = 'sustained'
+      and key in ('estudiantes_anio', 'horas_mantenimiento_mes', 'costo_hora', 'conversion_suscripcion',
+                  'precio_mensual', 'costo_correcciones_mes', 'costo_infraestructura_mes',
+                  'perdida_evitada_suscriptor_anio');
+  select value_num into v_perdida from public.assumptions
+    where org_id = p_org_id and key = 'perdida_evitada_suscriptor_anio';
+  select value_num into v_precio from public.assumptions
+    where org_id = p_org_id and key = 'precio_mensual';
+
+  if v_sustentados = 8
+     and v_perdida is not null and v_precio is not null and v_precio > 0
+     and v_perdida >= 10 * v_precio * 12 then
+    return 'SUPPORTED';
+  end if;
+  return 'EVIDENCE_RECORDED_NOT_SUPPORTED';
+end;
+$$;
+
+-- Interna: recibe un org_id arbitrario. Solo la usa el trigger de abajo.
+revoke all on function public.estado_viabilidad(uuid) from public, anon, authenticated;
+
+-- ---------- published_ledger: columnas de la Feature 4 ----------
+alter table public.published_ledger
+  add column if not exists viability text not null default 'NOT_DEMONSTRATED';
+-- Copia de organizations.es_oficial: anon no puede leer organizations, así
+-- que su policy filtra por esta columna. La mantiene sincronizada el
+-- trigger sincronizar_oficial (abajo); el cliente no la escribe.
+alter table public.published_ledger
+  add column if not exists oficial boolean not null default false;
+
+do $$
+begin
+  alter table public.published_ledger
+    add constraint published_ledger_viability_list
+    check (viability in ('NOT_DEMONSTRATED', 'EVIDENCE_RECORDED_NOT_SUPPORTED', 'SUPPORTED'));
+exception when duplicate_object then null;
+end;
+$$;
+
+-- El estado dentro del snapshot debe ser el mismo que el de la columna.
+do $$
+begin
+  alter table public.published_ledger
+    add constraint published_ledger_viability_matches_content
+    check (content ->> 'viabilidad' = viability);
+exception when duplicate_object then null;
+end;
+$$;
+
+-- Sin datos personales: ningún correo dentro del snapshot, y tamaño
+-- acotado (un snapshot legítimo pesa unos pocos KB).
+do $$
+begin
+  alter table public.published_ledger
+    add constraint published_ledger_no_email
+    check (content::text !~* '[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z0-9.-]+');
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter table public.published_ledger
+    add constraint published_ledger_content_size
+    check (pg_column_size(content) <= 65536);
+exception when duplicate_object then null;
+end;
+$$;
+
+-- Puerta de publicación. Corre ANTES de insertar, venga de donde venga (API
+-- con la llave pública, service role, SQL Editor):
+-- 1. la org debe ser oficial;
+-- 2. el estado de viabilidad debe ser el que calcula la base;
+-- 3. versión, fecha y `oficial` los pone la base, no el cliente.
+create or replace function public.validar_publicacion()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_oficial boolean;
+  v_esperado text;
+begin
+  -- Lock de la fila de la org: dos publicaciones simultáneas no pueden
+  -- recibir la misma versión.
+  select es_oficial into v_oficial from public.organizations where id = new.org_id for update;
+  if v_oficial is null then
+    raise exception 'Organización no encontrada.';
+  end if;
+  if not v_oficial then
+    raise exception 'Solo la organización oficial puede publicar el libro.' using errcode = 'P0001';
+  end if;
+
+  v_esperado := public.estado_viabilidad(new.org_id);
+  if new.viability is distinct from v_esperado then
+    raise exception 'Estado de viabilidad inválido: la base calcula %.', v_esperado using errcode = 'P0001';
+  end if;
+
+  select coalesce(max(version), 0) + 1 into new.version
+    from public.published_ledger where org_id = new.org_id;
+  new.published_at := now();
+  new.oficial := true;
+  return new;
+end;
+$$;
+
+revoke all on function public.validar_publicacion() from public, anon, authenticated;
+
+drop trigger if exists validar_publicacion on public.published_ledger;
+create trigger validar_publicacion
+  before insert on public.published_ledger
+  for each row execute function public.validar_publicacion();
+
+-- Inmutable: ni update ni delete ni truncate, para nadie. La única
+-- excepción es la columna `oficial` cuando la cambia sincronizar_oficial
+-- (pg_trigger_depth() > 1 = dentro de otro trigger).
+create or replace function public.libro_inmutable()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'UPDATE' and pg_trigger_depth() > 1
+     and new.id = old.id and new.org_id = old.org_id and new.version = old.version
+     and new.content = old.content and new.viability = old.viability
+     and new.published_at = old.published_at then
+    return new;
+  end if;
+  raise exception 'El libro publicado es inmutable: publica una versión nueva.' using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.libro_inmutable() from public, anon, authenticated;
+
+drop trigger if exists libro_inmutable on public.published_ledger;
+create trigger libro_inmutable
+  before update or delete on public.published_ledger
+  for each row execute function public.libro_inmutable();
+
+drop trigger if exists libro_inmutable_truncate on public.published_ledger;
+create trigger libro_inmutable_truncate
+  before truncate on public.published_ledger
+  for each statement execute function public.libro_inmutable();
+
+-- Si una org deja de ser oficial (o lo vuelve a ser), sus snapshots salen
+-- (o vuelven) de la vista pública.
+create or replace function public.sincronizar_oficial()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.es_oficial is distinct from old.es_oficial then
+    update public.published_ledger set oficial = new.es_oficial where org_id = new.id;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.sincronizar_oficial() from public, anon, authenticated;
+
+drop trigger if exists sincronizar_oficial on public.organizations;
+create trigger sincronizar_oficial
+  after update of es_oficial on public.organizations
+  for each row execute function public.sincronizar_oficial();
+
+-- Publicar: el cliente solo manda org_id, viability y content.
+drop policy if exists "members insert own org ledger" on public.published_ledger;
+create policy "members insert own org ledger"
+  on public.published_ledger for insert
+  to authenticated
+  with check (org_id = public.my_org_id());
+
+revoke insert, update, delete, truncate on public.published_ledger from authenticated;
+grant insert (org_id, viability, content) on public.published_ledger to authenticated;
+
+-- anon ve SOLO snapshots de organizaciones oficiales (reemplaza la policy
+-- `using (true)` de la Feature 1).
+drop policy if exists "anon reads published ledger" on public.published_ledger;
+create policy "anon reads published ledger"
+  on public.published_ledger for select
+  to anon
+  using (oficial);

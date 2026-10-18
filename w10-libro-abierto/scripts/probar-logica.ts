@@ -22,6 +22,9 @@ import {
   validarSupuesto,
   type ValoresSupuesto,
 } from "../lib/supuestos.ts";
+import { calcularViabilidad, queFalta } from "../lib/viabilidad.ts";
+import { TIPOS_EVIDENCIA, validarEvidencia, type ValoresEvidencia } from "../lib/pagador.ts";
+import { construirLibro, leerLibro } from "../lib/libro.ts";
 
 let ok = 0;
 let fail = 0;
@@ -225,6 +228,64 @@ check("no muta la entrada (funciona con objetos congelados)", !mutó);
 check("determinista: 2 llamadas → deep equal", igualesProfundo(calcularModelo(SEMBRADOS_MODELO), calcularModelo(SEMBRADOS_MODELO)));
 check("el orden de los supuestos no cambia el resultado",
   igualesProfundo(calcularModelo(SEMBRADOS_MODELO), calcularModelo([...SEMBRADOS_MODELO].reverse())));
+
+// ---------- Feature 4: viabilidad, evidencia y snapshot ----------
+const TODOS_SUSTENTADOS: Supuesto[] = [
+  ...SEMBRADOS_MODELO.map((s) => ({ ...s, status: "sustained" as EstadoSupuesto })),
+  { key: "perdida_evitada_suscriptor_anio", value_num: 6000, status: "sustained" },
+];
+check("sin evidencia → NOT_DEMONSTRATED aunque todo esté sustentado y el 10:1 se cumpla",
+  calcularViabilidad(false, TODOS_SUSTENTADOS) === "NOT_DEMONSTRATED");
+check("sin evidencia → nunca SUPPORTED, en los 300 casos al azar",
+  casos.every((s) => calcularViabilidad(false, s) === "NOT_DEMONSTRATED"));
+check("evidencia + 8 sustentados + 10:1 cumplido → SUPPORTED", calcularViabilidad(true, TODOS_SUSTENTADOS) === "SUPPORTED");
+check("evidencia + sembrados inventados → EVIDENCE_RECORDED_NOT_SUPPORTED",
+  calcularViabilidad(true, SEMBRADOS_MODELO) === "EVIDENCE_RECORDED_NOT_SUPPORTED");
+check("evidencia + uno 'weak' → no SUPPORTED",
+  calcularViabilidad(true, TODOS_SUSTENTADOS.map((s, i) => (i === 0 ? { ...s, status: "weak" as EstadoSupuesto } : s))) === "EVIDENCE_RECORDED_NOT_SUPPORTED");
+check("evidencia + todo sustentado pero 10:1 no cumplido (5,000 < 5,880) → no SUPPORTED",
+  calcularViabilidad(true, TODOS_SUSTENTADOS.map((s) => (s.key === "perdida_evitada_suscriptor_anio" ? { ...s, value_num: 5000 } : s))) === "EVIDENCE_RECORDED_NOT_SUPPORTED");
+check("evidencia + falta la pérdida evitada → no SUPPORTED",
+  calcularViabilidad(true, TODOS_SUSTENTADOS.filter((s) => s.key !== "perdida_evitada_suscriptor_anio")) === "EVIDENCE_RECORDED_NOT_SUPPORTED");
+check("la viabilidad tampoco depende del sponsor (no lo recibe)", calcularViabilidad.length === 2);
+check("queFalta sin nada: evidencia, supuestos y 10:1", queFalta(false, SEMBRADOS_MODELO).length === 3, queFalta(false, SEMBRADOS_MODELO));
+check("queFalta con todo listo: vacío", queFalta(true, TODOS_SUSTENTADOS).length === 0, queFalta(true, TODOS_SUSTENTADOS));
+
+const ev = (o: Partial<ValoresEvidencia>) => validarEvidencia({ kind: "carta_intencion", description: "Universidad simulada pagaría la cobertura un semestre.", document_ref: "Folio SIM-001", recorded_on: "2026-10-01", ...o }, HOY);
+check("evidencia válida → ok", ev({}).ok, ev({}));
+check("tipo fuera de la lista ('comision') → error", !ev({ kind: "comision" }).ok);
+check("descripción vacía → error bajo la descripción", (() => { const x = ev({ description: "   " }); return !x.ok && Object.keys(x.errores).join() === "description"; })());
+check("descripción de 1001 → error", !ev({ description: "x".repeat(1001) }).ok);
+check("referencia vacía → error", !ev({ document_ref: "" }).ok);
+check("referencia de 301 → error", !ev({ document_ref: "x".repeat(301) }).ok);
+check("fecha vacía → error", !ev({ recorded_on: "" }).ok);
+check("fecha futura → error", !ev({ recorded_on: "2026-12-01" }).ok);
+check("fecha inexistente → error", !ev({ recorded_on: "2026-02-30" }).ok);
+const evVarios = ev({ kind: "", description: "", document_ref: "", recorded_on: "x" });
+check("cuatro errores a la vez, cada uno en su campo", !evVarios.ok && Object.keys(evVarios.errores).length === 4, evVarios);
+check("ningún tipo de evidencia se llama comisión/afiliado/referido",
+  Object.keys(TIPOS_EVIDENCIA).every((k) => !/comisi|commission|afiliad|affiliat|referid|referral/i.test(k)));
+
+const conUnidad = (s: Supuesto[]) => s.map((x) => ({ ...x, unit: CATALOGO[x.key as keyof typeof CATALOGO].unidad, source_url: null, source_date: null }));
+const libro = construirLibro(conUnidad(SEMBRADOS_MODELO), ["carta_intencion", "carta_intencion"], "EVIDENCE_RECORDED_NOT_SUPPORTED");
+check("snapshot: total 7,500, faltante 4,560, viabilidad igual a la recibida",
+  valor(libro.costos.total) === 7500 && valor(libro.faltante) === 4560 && libro.viabilidad === "EVIDENCE_RECORDED_NOT_SUPPORTED", libro);
+check("snapshot: evidencia como conteo y tipos, sin descripción ni referencia",
+  libro.evidencia_pagador.registros === 2 && libro.evidencia_pagador.tipos.join() === "carta_intencion");
+check("snapshot marcado como simulado y con independencia verificada", libro.simulado === true && libro.independencia_verificada === true);
+const claves: string[] = [];
+JSON.stringify(libro, (k, v) => { if (k) claves.push(k); return v; });
+check("snapshot: ninguna clave de dato personal o texto libre (note, description, document_ref, recorded_by, email, name, id)",
+  !claves.some((k) => /^(note|description|document_ref|recorded_by|email|display_name|name|org_id|id|user)$/i.test(k)), [...new Set(claves)]);
+check("snapshot: ninguna clave de comisión/afiliado/referido",
+  !claves.some((k) => /comisi|commission|afiliad|affiliat|referid|referral/i.test(k)));
+check("snapshot: sin '@' (la base rechaza correos dentro del contenido)", !JSON.stringify(libro).includes("@"));
+check("snapshot pesa < 64 KB (constraint published_ledger_content_size)", JSON.stringify(libro).length < 65536);
+check("leerLibro acepta el snapshot real (ida y vuelta por JSON, como desde la base)", leerLibro(JSON.parse(JSON.stringify(libro))) !== null);
+for (const [nombre, malo] of [["null", null], ["texto", "hola"], ["sin costos", { formato: 1, viabilidad: "SUPPORTED" }],
+  ["formato futuro", { ...libro, formato: 2 }], ["cifra con valor texto", { ...libro, costos: { ...libro.costos, total: { calculable: true, valor: "7500", estado: "invented" } } }]] as [string, unknown][]) {
+  check(`leerLibro rechaza un snapshot con forma inesperada (${nombre})`, leerLibro(malo) === null);
+}
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);

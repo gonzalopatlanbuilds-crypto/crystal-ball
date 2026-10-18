@@ -353,3 +353,152 @@ la Feature 5, "polish"); un caso con insumos sustentados en el navegador
 **Siguiente paso:** Feature 4 (evidencia del pagador, compuerta de
 viabilidad, publicar y libro público). Cambia el esquema: no hay push
 hasta que Gonzalo corra el SQL.
+
+## 2026-10-18 — Feature 4: evidencia de pagador, compuerta de viabilidad, publicar y libro público
+
+**Cambio de decisión (Gonzalo):** `/financiamiento` ya no muestra "el último
+snapshot de cualquier organización" (entrada anterior), sino **el último
+snapshot de la organización oficial** (`organizations.es_oficial`). Esto
+cierra el riesgo que se había anotado: cualquiera con Google podía crear una
+org, publicar y aparecer en la página pública.
+
+**Qué cambió:**
+
+- `/modelo/pagador`: registrar evidencia (tipo, descripción, referencia del
+  documento, fecha). "Quién la registró" lo pone la base con la sesión
+  (`recorded_by default auth.uid()`, columna no escribible por el cliente);
+  la pantalla lo muestra como texto fijo. Errores bajo cada campo y lo
+  escrito se conserva. La evidencia **no se edita ni se borra** desde la
+  app: una corrección es un registro nuevo.
+- `/modelo`: caja de viabilidad (con lo que falta para el siguiente
+  estado), botón "Publicar libro" (deshabilitado y explicado si la org no
+  es oficial), y el texto de la prueba de independencia cambió a
+  "Demostración en vivo con estos insumos (la prueba completa está en
+  test:logica)".
+- `/financiamiento` (pública, sin login): el mockup del estudiante a partir
+  del último snapshot oficial. Si no hay: "Aún no hay libro publicado". Si
+  la lectura falla: un mensaje, no una página rota. Usa un cliente de
+  Supabase **sin sesión ni cookies** (`lib/supabase/publico.ts`); probado
+  con curl: 200 y **cero `Set-Cookie`**.
+- `lib/viabilidad.ts`, `lib/pagador.ts`, `lib/libro.ts`,
+  `lib/datos-guardados.ts`: lógica pura.
+
+**Viabilidad (servidor y base, la misma regla):**
+
+- `NOT_DEMONSTRATED`: sin evidencia de pagador.
+- `EVIDENCE_RECORDED_NOT_SUPPORTED`: con evidencia, pero falta algún
+  insumo, alguno no está sustentado o el 10:1 no se cumple.
+- `SUPPORTED`: evidencia + los 8 insumos sustentados + 10:1 cumplido.
+- El servidor la calcula (`calcularViabilidad`). La base la **recalcula
+  en SQL** (`estado_viabilidad`, numeric exacto) dentro del trigger
+  `validar_publicacion` y **rechaza cualquier publicación cuyo estado no
+  coincida**, en las dos direcciones (no se puede inflar a SUPPORTED ni
+  esconder evidencia publicando NOT_DEMONSTRATED). Corre antes de insertar,
+  así que aplica también a la service role y al SQL Editor.
+
+**Publicar (snapshot inmutable):**
+
+- Solo una org con `es_oficial = true` (servidor y trigger). `es_oficial`
+  no tiene ningún privilegio de escritura para el cliente: solo se cambia
+  desde el SQL Editor.
+- El cliente solo escribe `org_id`, `viability` y `content`. La versión
+  (siguiente de la org, con lock de la fila de la org), la fecha y
+  `oficial` los pone la base.
+- Inmutable: sin privilegios de update/delete y, además, un trigger que
+  rechaza update, delete y **truncate** para todos (incluido superusuario).
+  Única excepción: la columna `oficial`, que la sincroniza otro trigger
+  cuando una org deja de ser oficial (o vuelve a serlo).
+- Contenido en lista blanca (`construirLibro`): cifras, estados, catálogo
+  de supuestos con su fuente, conteo y tipos de evidencia. **Nunca** notas,
+  descripción ni referencia de la evidencia, correos, nombres ni ids. La
+  base además rechaza cualquier correo dentro del snapshot y más de 64 KB.
+- anon ve solo snapshots con `oficial = true` (reemplaza la policy
+  `using (true)` de la Feature 1). `oficial` es una copia de
+  `organizations.es_oficial` porque anon no puede leer `organizations`.
+
+**Pruebas:**
+
+- `npm run test:logica`: **144/144** (34 nuevas): viabilidad en sus tres
+  estados y "sin evidencia nunca SUPPORTED" en 300 casos al azar;
+  validación de la evidencia campo por campo; el snapshot no tiene claves
+  de datos personales ni de comisión/afiliado/referido, no tiene `@` y pesa
+  < 64 KB; `leerLibro` rechaza snapshots con forma inesperada.
+- `npm run test:schema`: **141/141** (59 nuevas). Además de lo pedido:
+  **la regla SQL = la regla TS en 60 casos al azar**; "Qué datos guardamos"
+  = `information_schema.columns` (tablas y columnas, en ambas
+  direcciones); ningún nombre de tabla, columna, función, constraint,
+  trigger, policy, valor de enum ni ruta de `app/` contiene
+  comisión/afiliado/referido; anon sigue sin EXECUTE en ninguna función; el
+  schema corre dos veces más con libros publicados sin tocarlos.
+- **Pruebas de mutación** (bug metido a propósito → la prueba debe fallar):
+  la base no recalcula la viabilidad → 13 FAIL; el cliente puede escribir
+  `es_oficial` → 1 FAIL; columna nueva no declarada en "Qué datos
+  guardamos" → 1 FAIL; policy de anon `using (true)` → **al principio solo
+  falló una prueba indirecta**: "anon no ve nada de una org no oficial"
+  era vacía (ninguna org no oficial tenía snapshots). Se corrigió: una org
+  publica, deja de ser oficial, y entonces se revisa. Con la mutación → 2
+  FAIL. Restaurado → 141/141.
+
+**Intentos de romperlo como atacante (todos en `test:schema`, marcados
+"ATAQUE"):** publicar SUPPORTED sin evidencia por la API y como
+superusuario; mentir "evidencia registrada" sin evidencia; esconder la
+evidencia publicando NOT_DEMONSTRATED; SUPPORTED con supuestos inventados;
+SUPPORTED justo después de borrar la evidencia; elegir versión, fecha u
+`oficial`; columna y contenido con estados distintos; estado inventado;
+correo dentro del snapshot; snapshot de 200 KB; ponerse `es_oficial`;
+crear una org oficial; publicar a nombre de la org oficial desde otra;
+falsificar `recorded_by`; evidencia en otra org; tipo `comision`; fecha
+futura; editar o borrar evidencia; editar, borrar o truncar el libro (API
+y superusuario). **Todos rechazados.**
+
+**Lo que encontré y NO está cerrado (límites honestos):**
+
+1. **La base verifica la viabilidad, pero no las cifras del contenido.**
+   Un miembro de la org oficial, con su sesión y la llave pública, podría
+   insertar directo por la API un snapshot con líneas de costo inventadas
+   (siempre que la viabilidad sea la correcta). Cerrarlo exige que la base
+   arme el contenido (una función security definer que calcule todo en
+   SQL), duplicando el modelo. No se hizo: el límite de confianza es "los
+   miembros de la org oficial". Queda anotado.
+2. **La concurrencia de versiones no está probada**: PGlite es una sola
+   conexión. El diseño la cubre (lock de la fila de la org + `unique (org_id,
+   version)`), pero sin prueba real.
+3. **El filtro de correos es una heurística**, no una garantía de "sin datos
+   personales". La garantía real es la lista blanca de `construirLibro`: los
+   campos de texto libre (notas, descripción, referencia) nunca entran al
+   snapshot. Una URL de fuente con un nombre en la ruta sí entraría.
+4. Un snapshot SUPPORTED ya publicado sigue diciendo SUPPORTED aunque
+   después se borre la evidencia desde el SQL Editor: es historia
+   inmutable a propósito; la siguiente publicación refleja la realidad.
+
+**Prueba contra Supabase real (después de que Gonzalo corrió el SQL):**
+
+- `scripts/probar-anon.sh`: `estado_viabilidad` → 401 (existe y anon no
+  la ejecuta); las funciones de trigger → 404 (PostgREST no las expone);
+  anon no ve snapshots no oficiales (`[]`) y no puede publicar (401).
+- `/modelo` con la org aún NO oficial: "Viabilidad: NO DEMOSTRADA" con lo
+  que falta, y "Publicar libro" deshabilitado con "Esta organización no lo
+  es". Intenté habilitar el botón con JavaScript para ver el rechazo del
+  servidor; el clasificador de permisos lo bloqueó (escribiría en la base)
+  y no se insistió. Ese camino lo cubren `test:schema` y la revisión de
+  `es_oficial` en `publicarLibro()`, **sin prueba en el navegador**.
+- Con autorización de Gonzalo, en el SQL Editor:
+  `update public.organizations set es_oficial = true where join_code = 'DEC-E99'`
+  → 1 fila, `es_oficial = true`.
+- `/modelo/pagador`: formulario vacío → 4 errores, uno bajo cada campo; todo
+  bien menos una fecha futura → solo "La fecha no puede ser futura" y lo
+  demás se conserva; evidencia simulada válida ("Carta de intención",
+  "SIMULADO: una universidad ficticia…", Folio SIM-001) → "Evidencia
+  registrada", con "registró" puesto por la base desde la sesión. **Queda
+  guardada para siempre** (no se borra desde la app).
+- `/modelo`: pasa a "Viabilidad: EVIDENCIA REGISTRADA, NO SUSTENTADA";
+  "Publicar libro" → "Publicada la versión v1".
+- `/financiamiento` sin cookies (curl) y en el navegador: 200, **0
+  `Set-Cookie`**, viabilidad "EVIDENCIA REGISTRADA, NO SUSTENTADA",
+  Mantenimiento 6,000 / Correcciones 1,000 / Infraestructura 500 / Total
+  7,500 (cada línea con `inventado`), "Versión publicada: v1 - simulada".
+  La descripción, el folio y el correo **no aparecen** en la página
+  pública, ni ningún `@`.
+
+**Siguiente paso:** push de la Feature 4 cuando Gonzalo confirme, y deploy 1
+(verificar `/login` 200 sin sesión y Deployment Protection apagado).
