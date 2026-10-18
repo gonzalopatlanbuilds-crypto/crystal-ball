@@ -134,3 +134,135 @@ verde; ningún `.env` en el commit; se muestran `git status` y
 
 La Feature 1 crea el esquema completo, así que su push espera a que
 exista el proyecto de Supabase y se haya corrido el SQL.
+
+## 2026-10-18 — Push de la Feature 1 y entorno local
+
+`.env.local` tenía tres problemas de forma: un espacio después del `=` en
+la URL y en la llave, y después la URL quedó como `https:////…` (al
+quitar el espacio se borró `https:` y quedaron las `//`; mi chequeo de
+"sin esquema" no lo distinguió y antepuse `https://` encima). Se
+corrigió con `sed` sin imprimir valores; ahora la URL tiene la forma
+exacta `https://<ref>.supabase.co` y el host responde. **Error mío:** en
+el diagnóstico de la URL, la máscara asumía que el host empezaba con
+letra y se imprimió el *ref* del proyecto (no es secreto: va en la URL
+pública que ve cualquier navegador, pero no debía mostrarse). Desde ahí
+solo se imprimen resultados fijos (OK/FALLA, códigos HTTP).
+
+`scripts/probar-anon.sh` contra el proyecto real: los 4 RPCs → 401
+`permission denied`, las 4 tablas privadas → `permission denied`,
+`published_ledger` → `[] 200`. Push de la Feature 1: `8e2c65e`.
+
+## 2026-10-18 — /financiamiento muestra el último snapshot publicado
+
+**Decisión (Gonzalo):** sin variable de entorno para elegir la
+organización. `/financiamiento` muestra el **último snapshot publicado
+de `published_ledger`** (el más reciente por fecha de publicación, de
+cualquier organización).
+
+Consecuencia a tener presente para la Feature 4: cualquier persona que
+inicie sesión con Google puede crear una organización y publicar, y su
+snapshot pasaría a ser el que ve el estudiante. En este piloto hay una
+sola organización real, así que no se agrega nada; si se quisiera
+cerrar, la opción sería limitar quién puede publicar (no implementado,
+fuera del alcance).
+
+## 2026-10-18 — Feature 2: registro de supuestos con estado y fuente
+
+**Qué cambió:**
+
+- `lib/supuestos.ts`: catálogo de las 8 claves (las 7 del mockup + la
+  pérdida evitada por suscriptor al año, insumo del 10:1) con etiqueta,
+  unidad, rango y si es entero; validación server-side del formulario.
+- `/modelo/supuestos`: tabla con estado y fuente, "Agregar supuesto" (solo
+  claves que aún no existen), "Cargar valores de ejemplo" cuando falta
+  alguno de los 7. `/modelo/supuestos/[id]`: editar valor, estado, URL,
+  fecha y nota; eliminar en dos pasos dentro de la página (sin
+  `confirm()`). `/modelo` muestra la tabla del mockup (Supuesto · Valor ·
+  Estado).
+- Errores bajo cada campo y lo escrito se conserva (mismo patrón
+  `useActionState` + `key` del formulario que w09). Al editar, la clave
+  sale de la base, no del campo oculto.
+
+**Reglas de validación (servidor):**
+
+- Número: coma decimal aceptada (`2,5`); se rechazan `1e3`, `NaN`,
+  `Infinity`, `0x10`, `1,234.5`, `1 000` y más de 4 decimales.
+  **`2,000` y `1.500` se rechazan como ambiguos** ("escríbelo sin
+  separador de miles, por ejemplo 2000") en vez de adivinar: en México
+  `2,000` es dos mil, y con coma decimal se guardaría 2. `0,035` sí pasa
+  (un 0 inicial no puede ser separador de miles).
+- Rango por clave (conversión 0–100 %, horas 0–744 al mes, estudiantes
+  entero, etc.). Fecha `AAAA-MM-DD` real, no futura (un día de margen
+  por zona horaria), desde 1990. URL `http(s)://`, máx. 500. Nota máx.
+  500.
+- **"Sustentado" exige URL y fecha; "débil" e "inventado" pueden ir sin
+  fuente.**
+
+**Base de datos (defensa para cualquier camino):** constraint
+`assumptions_sustained_needs_source`, clave+unidad del catálogo, rango
+0–10,000,000, URL `http(s)`, privilegios por columna (no se puede
+cambiar la clave ni la org de un supuesto, ni escribir `created_at`),
+`updated_at` por trigger. `create_org()` siembra los 7 supuestos del
+mockup, todos `invented` y sin fuente. La pérdida evitada **no** se
+siembra: sin ella el 10:1 es "no calculable".
+
+**Bug real encontrado por `test:schema`:** la primera versión tenía
+`check (value_num >= 0)` y **dejaba pasar `NaN`**: en Postgres, `NaN`
+es mayor que cualquier número, así que `NaN >= 0` es verdadero. Se
+cambió a un rango cerrado (`>= 0 and <= 10000000`), que rechaza `NaN` e
+`Infinity`. Prueba agregada para ambos.
+
+**Pruebas:**
+
+- `npm run test:logica`: **70/70** (15 de la Feature 1 + 55 de
+  validación: números, fechas, URLs, la regla sustentado→fuente, rangos,
+  errores múltiples en su campo).
+- `npm run test:schema`: **82/82**. Incluye: siembra exacta de los 7
+  (comparada contra `lib/supuestos.ts`), sustentado sin fuente rechazado
+  en insert y update, con URL sin fecha y viceversa, **y también como
+  superusuario** (es decir, desde el SQL Editor o con la service role);
+  catálogo TS = constraint de la base clave por clave; aislamiento entre
+  orgs; anon sin EXECUTE en ninguna función. **Nuevo: volver a correr el
+  schema dos veces con datos** → sin errores y la misma foto antes y
+  después (conteo de las 5 tablas, policies, suma de valores, clave +
+  estado + fuente de cada supuesto, y un valor editado que no se
+  re-siembra).
+- Lint sin warnings y build limpio.
+
+**Prueba manual en el navegador (local, contra Supabase real, después de
+que Gonzalo corrió el SQL de la Feature 2):**
+
+- Crear organización "Libro Abierto (simulado)" → `/modelo` muestra los 7
+  supuestos sembrados, todos `inventado`, igual que el mockup. ✅
+- Editar "Estudiantes al año" con `2,000` + "sustentado" sin fuente + una
+  nota → tres errores, cada uno bajo su campo (separador de miles, falta
+  URL, falta fecha); se conservan `2,000`, "sustentado" y la nota. ✅
+- `1e3` + "débil" → error solo en el valor ("débil" no exige fuente). ✅
+- `2000` + "débil" → se guarda y la tabla muestra 2,000 · débil. ✅
+- Eliminar (dos pasos, sin `confirm()`) → aparece "Cargar 1 valor de
+  ejemplo (inventados)" → lo restaura con su valor y nota originales. ✅
+- No probado en el navegador: "sustentado" **con** fuente y el formulario
+  de "Agregar" (los cubren `test:logica` y `test:schema`).
+- `scripts/probar-anon.sh` con las funciones nuevas: `sembrar_supuestos`
+  y `sembrar_supuestos_ejemplo` → 401 `permission denied` (confirma que
+  el SQL se aplicó); `tocar_updated_at` → 404 (PostgREST no expone
+  funciones de trigger).
+
+**Dos problemas del login local, ninguno del código:**
+
+1. `Unable to exchange external code`: el Client Secret guardado en
+   Supabase no era el del cliente OAuth (el cliente vive en el proyecto
+   "w10" de la otra cuenta de Google). Gonzalo generó un secret nuevo y
+   lo pegó; desde ahí el callback pasa.
+2. Después del login, Chrome mostraba una página de error y el log de
+   Next no registraba nada: **las cookies de `localhost` sumaban 18,276
+   bytes** (sesiones de Supabase de tres proyectos de semanas anteriores
+   más la de w10) y Node rechaza headers de más de 16 KB con 431 antes
+   de que Next vea la petición (reproducido con curl: 17 KB → 431,
+   1 KB → 200). Solo pasa en local; en Vercel cada proyecto tiene su
+   dominio. Arreglo temporal: `NODE_OPTIONS=--max-http-header-size=65536
+   npm run dev`. Arreglo permanente: borrar las cookies viejas de
+   `localhost` (no se cambió código).
+
+**Siguiente paso:** Feature 3 (modelo determinista y prueba de
+independencia), cuando Gonzalo confirme.

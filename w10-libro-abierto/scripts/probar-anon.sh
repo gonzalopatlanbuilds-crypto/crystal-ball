@@ -32,5 +32,8 @@ rpc create_org '{"p_name":"anon test"}'
 rpc join_org '{"p_join_code":"ABC-234"}'
 rpc my_org_id '{}'
 rpc generar_join_code '{}'
+rpc sembrar_supuestos "{\"p_org_id\":\"00000000-0000-0000-0000-000000000000\"}"
+rpc sembrar_supuestos_ejemplo '{}'
+rpc tocar_updated_at '{}'
 for t in organizations profiles assumptions payer_evidence published_ledger; do tabla $t; done
 rm -f "$T"

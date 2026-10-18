@@ -130,6 +130,10 @@ begin
     auth.jwt() -> 'user_metadata' ->> 'full_name'
   );
 
+  -- Feature 2: los 7 supuestos de ejemplo del mockup, todos 'invented'
+  -- (sembrar_supuestos() está más abajo; plpgsql la resuelve al ejecutar).
+  perform public.sembrar_supuestos(v_org_id);
+
   return query select v_org_id, v_code;
 end;
 $$;
@@ -292,3 +296,139 @@ create policy "members select own org ledger"
 revoke all on public.published_ledger from anon;
 revoke insert, update, delete, truncate on public.published_ledger from authenticated;
 grant select on public.published_ledger to anon, authenticated;
+
+-- ============================================================
+-- Feature 2: registro de supuestos.
+-- ============================================================
+
+-- Regla central: un supuesto "sustained" necesita URL y fecha de su fuente.
+-- "weak" e "invented" pueden omitirlas. Misma regla que
+-- lib/supuestos.ts (validarSupuesto); aquí aplica a CUALQUIER camino
+-- (API con la llave pública, SQL Editor, service role).
+do $$
+begin
+  alter table public.assumptions
+    add constraint assumptions_sustained_needs_source
+    check (status <> 'sustained' or (source_url is not null and source_date is not null));
+exception when duplicate_object then null;
+end;
+$$;
+
+-- Solo las claves del catálogo (lib/supuestos.ts, CATALOGO), cada una con
+-- su unidad: el modelo (Feature 3) depende de ellas.
+do $$
+begin
+  alter table public.assumptions
+    add constraint assumptions_key_unit_catalog
+    check ((key, unit) in (
+      ('estudiantes_anio', 'estudiantes/año'),
+      ('horas_mantenimiento_mes', 'horas/mes'),
+      ('costo_hora', 'MXN/hora'),
+      ('conversion_suscripcion', '%'),
+      ('precio_mensual', 'MXN/mes'),
+      ('costo_correcciones_mes', 'MXN/mes'),
+      ('costo_infraestructura_mes', 'MXN/mes'),
+      ('perdida_evitada_suscriptor_anio', 'MXN/suscriptor/año')
+    ));
+exception when duplicate_object then null;
+end;
+$$;
+
+-- Rango cerrado y no solo ">= 0": en Postgres NaN es mayor que cualquier
+-- número, así que `check (value_num >= 0)` dejaba pasar NaN (lo encontró
+-- test:schema). El máximo es el más alto del catálogo (lib/supuestos.ts).
+do $$
+begin
+  alter table public.assumptions
+    add constraint assumptions_value_range check (value_num >= 0 and value_num <= 10000000);
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter table public.assumptions
+    add constraint assumptions_source_url_http
+    check (source_url is null or source_url ~ '^https?://[^[:space:]]+$');
+exception when duplicate_object then null;
+end;
+$$;
+
+-- updated_at lo pone la base, no el cliente.
+create or replace function public.tocar_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+revoke all on function public.tocar_updated_at() from public, anon, authenticated;
+
+drop trigger if exists tocar_updated_at on public.assumptions;
+create trigger tocar_updated_at
+  before update on public.assumptions
+  for each row execute function public.tocar_updated_at();
+
+-- Privilegios por columna: el cliente no escribe id, created_at ni
+-- updated_at, y en un update no puede cambiar la clave ni la org (editar
+-- cambia el valor, no qué supuesto es).
+revoke insert, update, truncate, references, trigger on public.assumptions from authenticated;
+grant select, delete on public.assumptions to authenticated;
+grant insert (org_id, key, value_num, unit, status, source_url, source_date, note)
+  on public.assumptions to authenticated;
+grant update (value_num, unit, status, source_url, source_date, note)
+  on public.assumptions to authenticated;
+
+-- Valores del mockup, TODOS 'invented'. `on conflict do nothing`: nunca
+-- pisa un supuesto que ya existe ni revive uno con otro valor.
+create or replace function public.sembrar_supuestos(p_org_id uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n int;
+begin
+  insert into public.assumptions (org_id, key, value_num, unit, status, note)
+  values
+    (p_org_id, 'estudiantes_anio', 2000, 'estudiantes/año', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'horas_mantenimiento_mes', 40, 'horas/mes', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'costo_hora', 150, 'MXN/hora', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'conversion_suscripcion', 3, '%', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'precio_mensual', 49, 'MXN/mes', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'costo_correcciones_mes', 1000, 'MXN/mes', 'invented', 'Valor de ejemplo del mockup (simulado).'),
+    (p_org_id, 'costo_infraestructura_mes', 500, 'MXN/mes', 'invented', 'Valor de ejemplo del mockup (simulado).')
+  on conflict (org_id, key) do nothing;
+  get diagnostics v_n = row_count;
+  return v_n;
+end;
+$$;
+
+-- Interna: recibe un org_id arbitrario, así que nadie la llama directo.
+revoke all on function public.sembrar_supuestos(uuid) from public, anon, authenticated;
+
+-- RPC del botón "Cargar valores de ejemplo": solo en la org propia. Sirve
+-- para orgs creadas antes de la Feature 2 y para volver a cargar los que
+-- se borraron (los que existen no se tocan).
+create or replace function public.sembrar_supuestos_ejemplo()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.my_org_id();
+begin
+  if auth.uid() is null or v_org is null then
+    raise exception 'Se requiere sesión y organización.';
+  end if;
+  return public.sembrar_supuestos(v_org);
+end;
+$$;
+
+revoke all on function public.sembrar_supuestos_ejemplo() from public, anon;
+grant execute on function public.sembrar_supuestos_ejemplo() to authenticated;
