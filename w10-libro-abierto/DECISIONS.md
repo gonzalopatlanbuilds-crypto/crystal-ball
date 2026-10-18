@@ -576,3 +576,15 @@ Mutación: con las dos versiones viejas (`=`) → 7 FAIL; restaurado → 163/163
 
 **Lo que NO está probado:** nada de este ajuste contra Supabase real ni en
 el navegador (requiere correr el SQL).
+
+## 2026-10-18 — Deploy 1 (Vercel)
+
+- Proyecto `crystal-ball-w10-libro-abierto`, Root Directory `w10-libro-abierto`, alias de producción `https://crystal-ball-w10-libro-abierto.vercel.app`.
+- Variables: `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`, pegadas por Gonzalo (la primera vez quedaron con nombres `api`/`anon` y valores vacíos; se detectó antes de crear el proyecto y se corrigió). Revisadas solo por forma (sí/no), sin leer valores.
+- Deployment Protection (Vercel Authentication) apagado.
+- Supabase: Site URL = alias de producción; Redirect URLs = `http://localhost:3000` y `…vercel.app/auth/callback`.
+- Verificado desde fuera con curl: `/login` 200, `/financiamiento` 200 con cero `Set-Cookie` y v2 (viabilidad, marca de evidencia simulada, total 7,500), `/modelo` 307 a `/login`, en el alias y en la URL del deployment.
+- Navegador: login con Google en producción al primer intento (selector de cuentas visible) → `/modelo`; "Cerrar sesión" → `/login` sin 404.
+- Local: `npm run dev` ya no arranca en esta máquina (Windows `0xc0000142`, ~1 GB libre); se usa `next start` sobre el build de producción.
+
+**Siguiente paso:** Feature 5 (auditor de IA), cuando Gonzalo confirme.
