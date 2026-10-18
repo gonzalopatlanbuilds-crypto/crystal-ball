@@ -266,3 +266,90 @@ que Gonzalo corrió el SQL de la Feature 2):**
 
 **Siguiente paso:** Feature 3 (modelo determinista y prueba de
 independencia), cuando Gonzalo confirme.
+
+## 2026-10-18 — Feature 3: modelo determinista y prueba de independencia
+
+**Qué cambió:** `lib/modelo.ts`, funciones puras (sin red, base, IA,
+fecha ni azar). `calcularModelo(supuestos, { sponsor })` devuelve cada
+cifra como `{ calculable, valor, estado, insumos }` o
+`{ calculable: false, motivo, faltan }`. `/modelo` muestra el bloque de
+resultado del mockup y la prueba de independencia **calculada en vivo**
+con los supuestos actuales (no un texto fijo). Sin cambios de esquema.
+
+**Fórmulas y unidades** (ver también "sin /12" y "Chequeo 10:1"):
+
+| Cifra | Fórmula | Unidad |
+|---|---|---|
+| Mantenimiento | horas al mes × costo por hora | MXN / mes |
+| Costo total | mantenimiento + correcciones + infraestructura | MXN / mes |
+| Suscriptores | estudiantes al año × conversión % / 100 | suscriptores |
+| Ingreso | estudiantes al año × conversión % / 100 × precio mensual | MXN / mes |
+| Faltante | costo − ingreso (negativo = "Sobran") | MXN / mes |
+| Costo por estudiante | costo mensual × 12 ÷ estudiantes al año | MXN / año |
+| Pago anual del suscriptor | precio mensual × 12 | MXN / año |
+| Umbral 10:1 | 10 × pago anual | MXN / año |
+| Razón 10:1 | pérdida evitada por suscriptor al año ÷ pago anual | veces |
+
+**Reglas:**
+
+- **Estado derivado = el del insumo más débil** (invented < weak <
+  sustained), acumulado a través de cifras intermedias.
+- **Falta un insumo → "no calculable" con el motivo**, nunca un valor por
+  defecto. Un valor no finito (NaN) cuenta como faltante, no como 0.
+- **Ceros:** estudiantes al año = 0 o precio = 0 → "no calculable" (son
+  base de población o divisor). Horas, costos o conversión en 0 **sí** son
+  datos válidos (conversión 0% = ingreso 0: nadie se suscribe).
+- **`sponsor` se recibe y se ignora** (`void opciones`); ninguna línea lo
+  lee.
+- Redondeo a centavos para mostrar; operaciones ordenadas para que
+  2,000 × 3% dé 60 exacto y no 60.000000000000004.
+
+**Dos bugs reales que encontró `test:logica` (antes del commit):**
+
+1. **El 10:1 se daba por cumplido sin cumplirse.** `cumple` comparaba la
+   razón ya redondeada a centavos: con pérdida 5,879 y umbral 5,880, la
+   razón 9.998 se redondeaba a 10.00 → "se cumple". Ahora `cumple` se
+   decide con los insumos sin redondear.
+2. **Punto flotante en el borde exacto.** Con precio 40.06,
+   `10 × (40.06 × 12)` = 4807.200000000001, así que una pérdida de
+   exactamente 4,807.2 no "cumplía". Ahora se compara en enteros
+   (×10⁴, la precisión de la base). *(Mi primer ejemplo para esta prueba,
+   precio 49.9, era incorrecto: en JS sí da 5988 exacto. Se buscó un caso
+   real con un script antes de escribir la prueba.)*
+
+**Pruebas (`npm run test:logica`: 110/110, 40 nuevas de la Feature 3):**
+
+- Valores sembrados: costo 7,500 / ingreso 2,940 / faltante 4,560 (la
+  prueba que estaba escrita fuera del repo desde la decisión "sin /12"),
+  líneas 6,000 / 1,000 / 500, 60 suscriptores, MXN 45 por estudiante,
+  10:1 no calculable con "falta el valor evitado" y umbral 5,880.
+- **Independencia:** sponsor `undefined`, `null`, "A", "B", un objeto, 0 y
+  "" → deep equal; con los sembrados, con faltantes, con lista vacía y en
+  **300 casos al azar** (semilla fija, con faltantes y ceros).
+- **Herencia de estado en esos 300 casos:** cada cifra calculable tiene
+  exactamente el estado del más débil de sus insumos. Casos dirigidos: un
+  solo insumo inventado vuelve inventado el ingreso pero no el costo.
+- Vacíos y ceros: sin supuestos todo es no calculable; 0 estudiantes,
+  precio 0, NaN, sin horas → no calculable con motivo.
+- Pureza: no muta la entrada (objetos congelados), determinista, el orden
+  de los supuestos no importa.
+
+**Pruebas de mutación (confirman que las pruebas sí detectan fallas):**
+un modelo que sube el ingreso 0.1% con el sponsor B → 3 FAIL de
+independencia; la comparación ingenua del 10:1 → 1 FAIL. Código
+restaurado → 110/110.
+
+**Prueba manual en el navegador (local, Supabase real):** `/modelo`
+muestra Costo total MXN 7,500 / mes, Ingreso MXN 2,940 / mes, **Faltan
+MXN 4,560 / mes** (rojo), costo por estudiante MXN 45 al año, "Chequeo
+10:1: no calculable (falta el valor evitado)" + "cada suscriptor tendría
+que evitar MXN 5,880 al año", la etiqueta `inventado` junto a cada cifra
+derivada y "[OK] Sin patrocinador / A / B: resultados idénticos".
+
+**Lo que NO está probado:** la vista en ancho de teléfono (se revisa en
+la Feature 5, "polish"); un caso con insumos sustentados en el navegador
+(lo cubren las pruebas).
+
+**Siguiente paso:** Feature 4 (evidencia del pagador, compuerta de
+viabilidad, publicar y libro público). Cambia el esquema: no hay push
+hasta que Gonzalo corra el SQL.

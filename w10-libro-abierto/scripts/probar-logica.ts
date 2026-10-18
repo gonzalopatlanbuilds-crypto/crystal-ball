@@ -2,7 +2,18 @@
 // Uso: npm run test:logica
 import { crearOrgSchema, normalizarJoinCode, unirseOrgSchema } from "../lib/orgs.ts";
 import {
+  calcularModelo,
+  estadoMasDebil,
+  igualesProfundo,
+  pruebaIndependencia,
+  type Cifra,
+  type ResultadoModelo,
+  type Supuesto,
+} from "../lib/modelo.ts";
+import {
   CATALOGO,
+  CLAVES,
+  type EstadoSupuesto,
   formatearValor,
   leerFecha,
   leerNumero,
@@ -93,6 +104,127 @@ check("todos los máximos del catálogo ≤ 10,000,000 (constraint assumptions_v
 check("sembrados = 7, todos dentro de su rango", SEMBRADOS.length === 7 &&
   SEMBRADOS.every((x) => x.value_num >= CATALOGO[x.key].min && x.value_num <= CATALOGO[x.key].max));
 check("formatearValor: 2000 → '2,000', 3 → '3%'", formatearValor("estudiantes_anio", 2000) === "2,000" && formatearValor("conversion_suscripcion", "3.0000") === "3%");
+
+// ---------- Feature 3: modelo determinista ----------
+// Los valores sembrados del mockup (todos inventados). Unidades: estudiantes
+// por año, conversión en porcentaje, precio en MXN por mes (DECISIONS.md,
+// "Fórmula del ingreso por suscripción: sin /12").
+const SEMBRADOS_MODELO: Supuesto[] = SEMBRADOS.map((s) => ({ ...s, status: "invented" as const }));
+const valor = (c: Cifra) => (c.calculable ? c.valor : null);
+const estado = (c: Cifra) => (c.calculable ? c.estado : null);
+
+const m = calcularModelo(SEMBRADOS_MODELO);
+check("valores sembrados: costo 7,500 / ingreso 2,940 / faltante 4,560 (mockup, sin /12)",
+  valor(m.costoMensual) === 7500 && valor(m.ingresoMensual) === 2940 && valor(m.faltante) === 4560, m);
+check("líneas de costo del mockup público: mantenimiento 6,000 / correcciones 1,000 / infraestructura 500",
+  valor(m.mantenimiento) === 6000 && valor(m.correcciones) === 1000 && valor(m.infraestructura) === 500, m);
+check("60 suscriptores (2,000 × 3%), exacto", valor(m.suscriptores) === 60, m.suscriptores);
+check("costo por estudiante atendido: 7,500 × 12 ÷ 2,000 = 45 al año", valor(m.costoPorEstudianteAnual) === 45, m.costoPorEstudianteAnual);
+check("10:1 sin pérdida evitada → no calculable, y cumple = null",
+  !m.diezAUno.razon.calculable && m.diezAUno.cumple === null, m.diezAUno);
+check("10:1 sin insumo dice 'falta el valor evitado'",
+  !m.diezAUno.razon.calculable && m.diezAUno.razon.motivo === "falta el valor evitado", m.diezAUno.razon);
+check("umbral visible aunque falte el insumo: pago anual 588, umbral 5,880",
+  valor(m.diezAUno.pagoAnualSuscriptor) === 588 && valor(m.diezAUno.umbral) === 5880, m.diezAUno);
+check("todo lo derivado de insumos inventados es 'invented'",
+  [m.costoMensual, m.ingresoMensual, m.faltante, m.costoPorEstudianteAnual, m.diezAUno.umbral].every((c) => estado(c) === "invented"));
+
+const conPerdida = (v: number) => calcularModelo([...SEMBRADOS_MODELO, { key: "perdida_evitada_suscriptor_anio", value_num: v, status: "invented" }]);
+check("pérdida evitada 5,880 → razón 10, cumple (borde incluido)", (() => { const r = conPerdida(5880).diezAUno; return valor(r.razon) === 10 && r.cumple === true; })());
+check("pérdida evitada 5,879 → no cumple", conPerdida(5879).diezAUno.cumple === false);
+// 10 × (40.06 × 12) en punto flotante = 4807.200000000001 (> 4807.2).
+const precioDecimal = (v: number) => calcularModelo([...SEMBRADOS_MODELO.map((s) => (s.key === "precio_mensual" ? { ...s, value_num: 40.06 } : s)),
+  { key: "perdida_evitada_suscriptor_anio", value_num: v, status: "invented" }]).diezAUno.cumple;
+check("precio 40,06: pérdida 4,807.2 = 10 × 480.72 exacto → cumple (sin error de punto flotante)", precioDecimal(4807.2) === true);
+check("precio 40,06: pérdida 4,807.19 → no cumple", precioDecimal(4807.19) === false);
+check("pérdida evitada 0 → razón 0, no cumple (el 0 sí es un dato)", (() => { const r = conPerdida(0).diezAUno; return valor(r.razon) === 0 && r.cumple === false; })());
+
+// Independencia: sponsor A, B y ninguno → resultado idéntico (deep equal),
+// con los sembrados, con insumos faltantes y con 300 casos al azar
+// (PRNG con semilla fija: la prueba es reproducible).
+const SPONSORS: unknown[] = [undefined, null, "Patrocinador simulado A", "Patrocinador simulado B", { nombre: "B", paga: 1e6 }, 0, ""];
+const independiente = (s: Supuesto[]) => {
+  const base = calcularModelo(s);
+  return SPONSORS.every((sponsor) => igualesProfundo(base, calcularModelo(s, { sponsor })));
+};
+check("sponsor A / B / ninguno: deep equal con los sembrados", independiente(SEMBRADOS_MODELO));
+check("pruebaIndependencia() (la que muestra la página) da OK con los sembrados", pruebaIndependencia(SEMBRADOS_MODELO));
+check("independencia también con insumos faltantes", independiente(SEMBRADOS_MODELO.slice(2)));
+check("independencia con lista vacía", independiente([]));
+check("igualesProfundo sí detecta una diferencia (la prueba no es trivial)",
+  !igualesProfundo(calcularModelo(SEMBRADOS_MODELO), conPerdida(1)));
+
+let semilla = 20261018;
+const azar = () => ((semilla = (semilla * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+const ESTADOS_M: EstadoSupuesto[] = ["sustained", "weak", "invented"];
+const FUERZA: Record<string, number> = { invented: 0, weak: 1, sustained: 2 };
+const casos: Supuesto[][] = [];
+for (let i = 0; i < 300; i++) {
+  casos.push(
+    CLAVES.filter(() => azar() > 0.15).map((key) => ({
+      key,
+      value_num: azar() < 0.1 ? 0 : Math.round(azar() * 5000 * 100) / 100,
+      status: ESTADOS_M[Math.floor(azar() * 3)],
+    }))
+  );
+}
+check("independencia en 300 casos al azar (con faltantes y ceros)", casos.every(independiente));
+
+// Herencia del estado: ninguna cifra derivada es más fuerte que su insumo
+// más débil, en los 300 casos.
+const cifras = (r: ResultadoModelo): Cifra[] => [r.mantenimiento, r.correcciones, r.infraestructura, r.costoMensual, r.suscriptores,
+  r.ingresoMensual, r.faltante, r.costoPorEstudianteAnual, r.diezAUno.pagoAnualSuscriptor, r.diezAUno.umbral, r.diezAUno.razon];
+const herenciaOk = casos.every((s) => cifras(calcularModelo(s)).every((c) => {
+  if (!c.calculable) return true;
+  const debil = Math.min(...c.insumos.map((k) => FUERZA[s.find((x) => x.key === k)!.status]));
+  return FUERZA[c.estado] === debil && c.insumos.length > 0;
+}));
+check("estado derivado = el más débil de sus insumos, en 300 casos", herenciaOk);
+const unoInventado = SEMBRADOS_MODELO.map((s) => ({ ...s, status: "sustained" as EstadoSupuesto }));
+unoInventado[3] = { ...unoInventado[3], status: "invented" }; // conversión
+const mi = calcularModelo(unoInventado);
+check("un solo insumo inventado (conversión) → ingreso y faltante 'invented'",
+  estado(mi.ingresoMensual) === "invented" && estado(mi.faltante) === "invented", mi);
+check("…pero el costo (que no usa la conversión) sigue 'sustained'", estado(mi.costoMensual) === "sustained", mi.costoMensual);
+const unoDebil = unoInventado.map((s) => (s.key === "conversion_suscripcion" ? { ...s, status: "weak" as EstadoSupuesto } : s));
+check("con conversión 'weak' y lo demás sustentado → ingreso 'weak'", estado(calcularModelo(unoDebil).ingresoMensual) === "weak");
+check("todo sustentado → ingreso 'sustained'", estado(calcularModelo(unoInventado.map((s) => ({ ...s, status: "sustained" as EstadoSupuesto }))).ingresoMensual) === "sustained");
+check("estadoMasDebil", estadoMasDebil(["sustained", "weak"]) === "weak" && estadoMasDebil(["weak", "invented", "sustained"]) === "invented" && estadoMasDebil([]) === "invented");
+
+// Vacíos y ceros: "no calculable", nunca un número.
+const vacio = calcularModelo([]);
+check("sin supuestos → todas las cifras no calculables", cifras(vacio).every((c) => !c.calculable) && vacio.diezAUno.cumple === null, vacio);
+const sinEst = (v: number | null) => calcularModelo(SEMBRADOS_MODELO.filter((s) => s.key !== "estudiantes_anio")
+  .concat(v === null ? [] : [{ key: "estudiantes_anio", value_num: v, status: "invented" }]));
+const cero = sinEst(0);
+check("0 estudiantes → ingreso, suscriptores, faltante y costo por estudiante no calculables",
+  !cero.ingresoMensual.calculable && !cero.suscriptores.calculable && !cero.faltante.calculable && !cero.costoPorEstudianteAnual.calculable, cero);
+check("0 estudiantes → el motivo lo dice", !cero.ingresoMensual.calculable && cero.ingresoMensual.motivo.includes("estudiantes al año es 0"), cero.ingresoMensual);
+check("0 estudiantes → el costo sí se calcula (no depende de ellos)", valor(cero.costoMensual) === 7500);
+check("sin estudiantes → motivo 'falta estudiantes al año'", (() => { const c = sinEst(null).ingresoMensual; return !c.calculable && c.faltan.join() === "estudiantes_anio"; })());
+const precio0 = calcularModelo(SEMBRADOS_MODELO.map((s) => (s.key === "precio_mensual" ? { ...s, value_num: 0 } : s)));
+check("precio 0 → umbral 10:1 e ingreso no calculables", !precio0.diezAUno.umbral.calculable && !precio0.ingresoMensual.calculable, precio0.diezAUno);
+const conv0 = calcularModelo(SEMBRADOS_MODELO.map((s) => (s.key === "conversion_suscripcion" ? { ...s, value_num: 0 } : s)));
+check("conversión 0% → ingreso 0 (un dato válido: nadie se suscribe) y faltante 7,500",
+  valor(conv0.ingresoMensual) === 0 && valor(conv0.faltante) === 7500, conv0);
+const sinHoras = calcularModelo(SEMBRADOS_MODELO.filter((s) => s.key !== "horas_mantenimiento_mes"));
+check("sin horas → mantenimiento, costo total, faltante y costo por estudiante no calculables",
+  !sinHoras.mantenimiento.calculable && !sinHoras.costoMensual.calculable && !sinHoras.faltante.calculable && !sinHoras.costoPorEstudianteAnual.calculable, sinHoras);
+check("sin horas → correcciones e infraestructura sí", valor(sinHoras.correcciones) === 1000 && valor(sinHoras.infraestructura) === 500);
+check("sin horas → el faltante dice qué falta", !sinHoras.faltante.calculable && sinHoras.faltante.faltan.join() === "horas_mantenimiento_mes", sinHoras.faltante);
+const nan = calcularModelo(SEMBRADOS_MODELO.map((s) => (s.key === "costo_hora" ? { ...s, value_num: NaN } : s)));
+check("valor NaN cuenta como faltante, nunca como número", !nan.mantenimiento.calculable && !nan.costoMensual.calculable, nan.mantenimiento);
+check("ingreso mayor que el costo → faltante negativo (sobra), calculable",
+  valor(calcularModelo(SEMBRADOS_MODELO.map((s) => (s.key === "conversion_suscripcion" ? { ...s, value_num: 10 } : s))).faltante) === 7500 - 9800);
+
+// Pureza: no muta la entrada y es determinista.
+const congelados = Object.freeze(SEMBRADOS_MODELO.map((s) => Object.freeze({ ...s })));
+let mutó = false;
+try { calcularModelo(congelados); } catch { mutó = true; }
+check("no muta la entrada (funciona con objetos congelados)", !mutó);
+check("determinista: 2 llamadas → deep equal", igualesProfundo(calcularModelo(SEMBRADOS_MODELO), calcularModelo(SEMBRADOS_MODELO)));
+check("el orden de los supuestos no cambia el resultado",
+  igualesProfundo(calcularModelo(SEMBRADOS_MODELO), calcularModelo([...SEMBRADOS_MODELO].reverse())));
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);
