@@ -6,8 +6,13 @@
 import { calcularModelo, pruebaIndependencia, type Cifra, type Supuesto } from "./modelo.ts";
 import { CATALOGO, esClave } from "./supuestos.ts";
 import type { Viabilidad } from "./viabilidad.ts";
+import { AVISO_PUBLICO } from "./avisos.ts";
 
-export const FORMATO_LIBRO = 1;
+// Formato 2 (2026-10-18): marca de datos simulados dentro del snapshot y
+// conteo de evidencia simulada. v1 (formato 1) se sigue leyendo: es
+// inmutable y no se puede reescribir.
+export const FORMATO_LIBRO = 2;
+const FORMATOS_LEIBLES = [1, 2];
 
 export interface SupuestoPublicado {
   clave: string;
@@ -22,6 +27,10 @@ export interface SupuestoPublicado {
 export interface Libro {
   formato: number;
   simulado: true;
+  // Desde el formato 2. La base exige ambos en todo snapshot nuevo
+  // (constraint published_ledger_marca_simulados).
+  datos_simulados?: true;
+  aviso_datos_simulados?: string;
   viabilidad: Viabilidad;
   costos: { mantenimiento: Cifra; correcciones: Cifra; infraestructura: Cifra; total: Cifra };
   ingreso_mensual: Cifra;
@@ -29,8 +38,15 @@ export interface Libro {
   costo_por_estudiante_anual: Cifra;
   diez_a_uno: { umbral: Cifra; razon: Cifra; cumple: boolean | null };
   supuestos: SupuestoPublicado[];
-  evidencia_pagador: { registros: number; tipos: string[] };
+  // `simuladas` desde el formato 2; la base revisa que ambos conteos sean
+  // los reales al publicar.
+  evidencia_pagador: { registros: number; simuladas?: number; tipos: string[] };
   independencia_verificada: boolean;
+}
+
+export interface EvidenciaParaLibro {
+  kind: string;
+  simulada: boolean;
 }
 
 export interface SupuestoConFuente extends Supuesto {
@@ -41,13 +57,15 @@ export interface SupuestoConFuente extends Supuesto {
 
 export function construirLibro(
   supuestos: readonly SupuestoConFuente[],
-  tiposEvidencia: readonly string[],
+  evidencias: readonly EvidenciaParaLibro[],
   viabilidad: Viabilidad
 ): Libro {
   const r = calcularModelo(supuestos);
   return {
     formato: FORMATO_LIBRO,
     simulado: true,
+    datos_simulados: true,
+    aviso_datos_simulados: AVISO_PUBLICO,
     viabilidad,
     costos: {
       mantenimiento: r.mantenimiento,
@@ -68,7 +86,11 @@ export function construirLibro(
       fuente_url: s.source_url,
       fuente_fecha: s.source_date,
     })),
-    evidencia_pagador: { registros: tiposEvidencia.length, tipos: [...new Set(tiposEvidencia)].sort() },
+    evidencia_pagador: {
+      registros: evidencias.length,
+      simuladas: evidencias.filter((e) => e.simulada).length,
+      tipos: [...new Set(evidencias.map((e) => e.kind))].sort(),
+    },
     independencia_verificada: pruebaIndependencia(supuestos),
   };
 }
@@ -89,7 +111,8 @@ export function leerLibro(content: unknown): Libro | null {
   const l = content as Partial<Libro>;
   const c = l.costos;
   if (
-    l.formato !== FORMATO_LIBRO ||
+    typeof l.formato !== "number" ||
+    !FORMATOS_LEIBLES.includes(l.formato) ||
     typeof l.viabilidad !== "string" ||
     !c ||
     ![c.mantenimiento, c.correcciones, c.infraestructura, c.total].every(esCifra)
@@ -112,4 +135,5 @@ export const QUE_DATOS_GUARDAMOS = [
   "De estudiantes: ninguno. Esta página no pide cuenta.",
   "Solo el equipo inicia sesión para editar el modelo.",
   "No se comparte nada con vendedores.",
+  "Todas las versiones publicadas son públicas.",
 ];

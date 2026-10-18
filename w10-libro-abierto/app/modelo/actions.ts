@@ -34,16 +34,16 @@ export async function publicarLibro(): Promise<PublicarState> {
 
   const [{ filas, error: errorSupuestos }, { data: evidencia, error: errorEvidencia }] = await Promise.all([
     leerSupuestos(),
-    supabase.from("payer_evidence").select("kind").returns<{ kind: string }[]>(),
+    supabase.from("payer_evidence").select("kind, simulada").returns<{ kind: string; simulada: boolean }[]>(),
   ]);
   if (errorSupuestos || errorEvidencia) {
     console.error("publicarLibro: lectura falló", errorEvidencia);
     return { error: "No se pudo leer el modelo. Intenta de nuevo." };
   }
 
-  const tipos = (evidencia ?? []).map((e) => e.kind);
-  const viabilidad = calcularViabilidad(tipos.length > 0, filas);
-  const libro = construirLibro(filas, tipos, viabilidad);
+  const evidencias = evidencia ?? [];
+  const viabilidad = calcularViabilidad(evidencias.length > 0, filas);
+  const libro = construirLibro(filas, evidencias, viabilidad);
   if (!libro.independencia_verificada) {
     return { error: "La prueba de independencia falló: el resultado cambia según el patrocinador. No se publicó." };
   }
@@ -58,7 +58,7 @@ export async function publicarLibro(): Promise<PublicarState> {
     if (error?.message?.includes("Solo la organización oficial")) {
       return { error: "Solo la organización oficial puede publicar el libro." };
     }
-    if (error?.message?.includes("Estado de viabilidad inválido")) {
+    if (error?.message?.includes("Estado de viabilidad inválido") || error?.message?.includes("no coincide con la evidencia")) {
       return { error: "Los datos cambiaron mientras publicabas. Recarga la página y vuelve a intentar." };
     }
     return { error: "No se pudo publicar. Intenta de nuevo." };

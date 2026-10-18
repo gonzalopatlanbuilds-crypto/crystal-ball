@@ -537,14 +537,14 @@ end;
 $$;
 
 -- El estado dentro del snapshot debe ser el mismo que el de la columna.
-do $$
-begin
-  alter table public.published_ledger
-    add constraint published_ledger_viability_matches_content
-    check (content ->> 'viabilidad' = viability);
-exception when duplicate_object then null;
-end;
-$$;
+-- `is not distinct from` y no `=`: con `=`, un snapshot SIN la clave
+-- `viabilidad` daba NULL y un check con NULL pasa (bug encontrado en el
+-- ajuste de la Feature 4). Se borra y se vuelve a crear en cada corrida
+-- para reemplazar la versión con `=` en bases que ya la tienen.
+alter table public.published_ledger drop constraint if exists published_ledger_viability_matches_content;
+alter table public.published_ledger
+  add constraint published_ledger_viability_matches_content
+  check ((content ->> 'viabilidad') is not distinct from viability);
 
 -- Sin datos personales: ningún correo dentro del snapshot, y tamaño
 -- acotado (un snapshot legítimo pesa unos pocos KB).
@@ -580,7 +580,10 @@ as $$
 declare
   v_oficial boolean;
   v_esperado text;
+  v_registros int;
+  v_simuladas int;
 begin
+  -- (Ajuste: también revisa los conteos de evidencia, ver abajo.)
   -- Lock de la fila de la org: dos publicaciones simultáneas no pueden
   -- recibir la misma versión.
   select es_oficial into v_oficial from public.organizations where id = new.org_id for update;
@@ -594,6 +597,14 @@ begin
   v_esperado := public.estado_viabilidad(new.org_id);
   if new.viability is distinct from v_esperado then
     raise exception 'Estado de viabilidad inválido: la base calcula %.', v_esperado using errcode = 'P0001';
+  end if;
+
+  select count(*), count(*) filter (where simulada) into v_registros, v_simuladas
+    from public.payer_evidence where org_id = new.org_id;
+  if (new.content -> 'evidencia_pagador' ->> 'registros') is distinct from v_registros::text
+     or (new.content -> 'evidencia_pagador' ->> 'simuladas') is distinct from v_simuladas::text then
+    raise exception 'El snapshot no coincide con la evidencia registrada (% registros, % simuladas).',
+      v_registros, v_simuladas using errcode = 'P0001';
   end if;
 
   select coalesce(max(version), 0) + 1 into new.version
@@ -681,3 +692,32 @@ create policy "anon reads published ledger"
   on public.published_ledger for select
   to anon
   using (oficial);
+
+-- ============================================================
+-- Feature 4 (ajuste): marca de datos simulados en cada snapshot nuevo.
+-- ============================================================
+
+-- Si la evidencia es simulada. Default true: en este proyecto todo dato es
+-- inventado (piso de seguridad), así que SIM-001 y cualquier fila anterior
+-- quedan marcadas como simuladas al agregar la columna. La app no ofrece
+-- cómo cambiarla: una evidencia real tendría que marcarse a mano en el SQL
+-- Editor, a propósito. El cliente no puede escribirla (no está en el
+-- grant de insert de payer_evidence).
+alter table public.payer_evidence
+  add column if not exists simulada boolean not null default true;
+
+-- Todo snapshot NUEVO lleva la marca de datos simulados y dice cuántas de
+-- sus evidencias son simuladas. NOT VALID: no se revisan los snapshots ya
+-- publicados (v1 es inmutable y se publicó antes de esta regla).
+-- Sin NULL posibles (un check con NULL pasa): si falta la clave, coalesce
+-- da false y se rechaza.
+alter table public.published_ledger drop constraint if exists published_ledger_marca_simulados;
+alter table public.published_ledger
+  add constraint published_ledger_marca_simulados
+  check (
+    coalesce(content ->> 'datos_simulados' = 'true', false)
+    and coalesce(jsonb_typeof(content -> 'evidencia_pagador' -> 'simuladas') = 'number', false)
+  ) not valid;
+
+-- (validar_publicacion, en la sección de la Feature 4, ahora también exige
+-- que los conteos de evidencia del snapshot sean los de la base.)

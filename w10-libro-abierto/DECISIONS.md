@@ -502,3 +502,77 @@ y superusuario). **Todos rechazados.**
 
 **Siguiente paso:** push de la Feature 4 cuando Gonzalo confirme, y deploy 1
 (verificar `/login` 200 sin sesión y Deployment Protection apagado).
+
+## 2026-10-18 — Ajuste de la Feature 4: marca de datos simulados, consulta pública probada, historial público
+
+**Corrección de Gonzalo:** v1 no "queda oculta": el historial de versiones
+es público por la API (anon lee todas las versiones de la org oficial), y
+es coherente con un libro de transparencia. "Qué datos guardamos" ahora lo
+dice: "Todas las versiones publicadas son públicas."
+
+**Qué trae v1 (revisado en el código con el que se publicó, commit
+`add345b`; no se consultó la base):** `"simulado": true` en la raíz y nada
+más sobre datos simulados. `evidencia_pagador` solo trae `registros` y
+`tipos`: **v1 no dice que la evidencia SIM-001 es simulada**. La palabra
+"SIMULADO" estaba en la descripción de la evidencia, que a propósito no se
+publica. En la página, v1 solo se ve como simulada por el banner general y
+por "v1 - simulada". v1 es inmutable: no se corrige; la siguiente versión
+sí trae la marca.
+
+**Qué cambió:**
+
+- `payer_evidence.simulada` (boolean, default `true`). En este proyecto
+  todo dato es inventado, así que SIM-001 queda marcada como simulada al
+  agregar la columna. La app no ofrece cómo cambiarla (el cliente no puede
+  escribirla): una evidencia real tendría que marcarse a propósito desde el
+  SQL Editor.
+- Snapshot formato 2 (`lib/libro.ts`): `datos_simulados: true`,
+  `aviso_datos_simulados` (el mismo texto del banner) y
+  `evidencia_pagador.simuladas`. `leerLibro` sigue leyendo el formato 1
+  (v1).
+- La base exige en todo snapshot **nuevo** la marca y el conteo
+  (`published_ledger_marca_simulados`, NOT VALID para no revalidar v1), y
+  el trigger `validar_publicacion` rechaza si `registros` o `simuladas` no
+  son los de la base (no se puede esconder la evidencia ni presentar como
+  real la simulada).
+- `/financiamiento`: si el snapshot trae evidencia simulada, la caja de
+  viabilidad agrega "La evidencia registrada es simulada (N de M): no hay
+  un pagador real." (v1 no lo muestra porque no trae el conteo.)
+- La consulta de `/financiamiento` vive en `lib/libro-publico.ts`; la
+  página la ejecuta con supabase-js y `test:schema` la traduce a SQL y la
+  corre como anon. Desempate agregado: `published_at desc, version desc`.
+
+**Dos bugs reales encontrados (mismo tipo: un `check` con NULL pasa):**
+
+1. La primera versión de la constraint nueva usaba
+   `content ->> 'datos_simulados' = 'true'`: un snapshot **sin** la clave
+   daba NULL y se aceptaba. Lo atrapó la prueba nueva. Ahora con
+   `coalesce(…, false)`.
+2. **El mismo hueco ya estaba en la Feature 4 (en producción):**
+   `check (content ->> 'viabilidad' = viability)` aceptaba un snapshot sin
+   la clave `viabilidad`. La compuerta seguía a salvo (el trigger compara la
+   columna `viability` con la que calcula la base), pero el contenido podía
+   omitir el estado. Ahora `is not distinct from`, y la constraint se borra
+   y se vuelve a crear en cada corrida para reemplazar la versión vieja. Se
+   agregó la prueba que faltaba.
+
+Mutación: con las dos versiones viejas (`=`) → 7 FAIL; restaurado → 163/163.
+
+**Pruebas:**
+
+- `test:schema` **163/163** (22 nuevas): la consulta pública devuelve 0
+  filas sin org oficial, la última versión de la oficial (no v1), ignora un
+  snapshot más reciente de una org no oficial, cambia a la versión nueva al
+  publicar, y las anteriores siguen públicas por la API; snapshot sin
+  marca, con `datos_simulados = false`, con conteos falsos o sin el conteo
+  de simuladas → rechazados; el cliente no puede marcar una evidencia como
+  real; con 1 simulada y 1 real el snapshot guarda 2 y 1; un snapshot
+  formato 1 ya publicado sobrevive a volver a correr el schema (NOT VALID).
+- `test:logica` **150/150**: formato 2, conteo de simuladas, `leerLibro`
+  lee formato 1, la frase nueva de "qué datos guardamos", la forma del SQL
+  de la consulta pública.
+- "Qué datos guardamos" = tablas y columnas reales: se agregó `simulada`
+  a `payer_evidence` en `lib/datos-guardados.ts` (sin eso la prueba falla).
+
+**Lo que NO está probado:** nada de este ajuste contra Supabase real ni en
+el navegador (requiere correr el SQL).

@@ -24,7 +24,9 @@ import {
 } from "../lib/supuestos.ts";
 import { calcularViabilidad, queFalta } from "../lib/viabilidad.ts";
 import { TIPOS_EVIDENCIA, validarEvidencia, type ValoresEvidencia } from "../lib/pagador.ts";
-import { construirLibro, leerLibro } from "../lib/libro.ts";
+import { construirLibro, leerLibro, QUE_DATOS_GUARDAMOS } from "../lib/libro.ts";
+import { sqlLibroPublico } from "../lib/libro-publico.ts";
+import { AVISO_PUBLICO } from "../lib/avisos.ts";
 
 let ok = 0;
 let fail = 0;
@@ -267,11 +269,23 @@ check("ningún tipo de evidencia se llama comisión/afiliado/referido",
   Object.keys(TIPOS_EVIDENCIA).every((k) => !/comisi|commission|afiliad|affiliat|referid|referral/i.test(k)));
 
 const conUnidad = (s: Supuesto[]) => s.map((x) => ({ ...x, unit: CATALOGO[x.key as keyof typeof CATALOGO].unidad, source_url: null, source_date: null }));
-const libro = construirLibro(conUnidad(SEMBRADOS_MODELO), ["carta_intencion", "carta_intencion"], "EVIDENCE_RECORDED_NOT_SUPPORTED");
+const libro = construirLibro(conUnidad(SEMBRADOS_MODELO), [{ kind: "carta_intencion", simulada: true }, { kind: "carta_intencion", simulada: false }], "EVIDENCE_RECORDED_NOT_SUPPORTED");
 check("snapshot: total 7,500, faltante 4,560, viabilidad igual a la recibida",
   valor(libro.costos.total) === 7500 && valor(libro.faltante) === 4560 && libro.viabilidad === "EVIDENCE_RECORDED_NOT_SUPPORTED", libro);
 check("snapshot: evidencia como conteo y tipos, sin descripción ni referencia",
-  libro.evidencia_pagador.registros === 2 && libro.evidencia_pagador.tipos.join() === "carta_intencion");
+  libro.evidencia_pagador.registros === 2 && libro.evidencia_pagador.tipos.join() === "carta_intencion", libro.evidencia_pagador);
+check("snapshot (formato 2): cuenta cuántas evidencias son simuladas (1 de 2)", libro.evidencia_pagador.simuladas === 1, libro.evidencia_pagador);
+check("snapshot (formato 2): datos_simulados = true y el aviso dentro del contenido",
+  libro.formato === 2 && libro.datos_simulados === true && libro.aviso_datos_simulados === AVISO_PUBLICO && /simulados/i.test(libro.aviso_datos_simulados ?? ""), libro);
+const sinEvidencia = construirLibro(conUnidad(SEMBRADOS_MODELO), [], "NOT_DEMONSTRATED");
+check("snapshot sin evidencia: registros 0, simuladas 0 (número, no ausente)", sinEvidencia.evidencia_pagador.registros === 0 && sinEvidencia.evidencia_pagador.simuladas === 0);
+const v1 = JSON.parse(JSON.stringify(libro));
+v1.formato = 1; delete v1.datos_simulados; delete v1.aviso_datos_simulados; delete v1.evidencia_pagador.simuladas;
+check("leerLibro sigue leyendo un snapshot formato 1 (v1 ya publicado, inmutable)", leerLibro(v1) !== null);
+check("'Qué datos guardamos' dice que todas las versiones publicadas son públicas",
+  QUE_DATOS_GUARDAMOS.includes("Todas las versiones publicadas son públicas."));
+check("sqlLibroPublico: filtra oficial, ordena por fecha desc y toma 1",
+  /where oficial = true order by published_at desc, version desc limit 1$/.test(sqlLibroPublico()), sqlLibroPublico());
 check("snapshot marcado como simulado y con independencia verificada", libro.simulado === true && libro.independencia_verificada === true);
 const claves: string[] = [];
 JSON.stringify(libro, (k, v) => { if (k) claves.push(k); return v; });
@@ -283,7 +297,7 @@ check("snapshot: sin '@' (la base rechaza correos dentro del contenido)", !JSON.
 check("snapshot pesa < 64 KB (constraint published_ledger_content_size)", JSON.stringify(libro).length < 65536);
 check("leerLibro acepta el snapshot real (ida y vuelta por JSON, como desde la base)", leerLibro(JSON.parse(JSON.stringify(libro))) !== null);
 for (const [nombre, malo] of [["null", null], ["texto", "hola"], ["sin costos", { formato: 1, viabilidad: "SUPPORTED" }],
-  ["formato futuro", { ...libro, formato: 2 }], ["cifra con valor texto", { ...libro, costos: { ...libro.costos, total: { calculable: true, valor: "7500", estado: "invented" } } }]] as [string, unknown][]) {
+  ["formato futuro", { ...libro, formato: 3 }], ["cifra con valor texto", { ...libro, costos: { ...libro.costos, total: { calculable: true, valor: "7500", estado: "invented" } } }]] as [string, unknown][]) {
   check(`leerLibro rechaza un snapshot con forma inesperada (${nombre})`, leerLibro(malo) === null);
 }
 

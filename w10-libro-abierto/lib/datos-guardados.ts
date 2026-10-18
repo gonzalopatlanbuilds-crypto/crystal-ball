@@ -26,12 +26,12 @@ export const DATOS_GUARDADOS: TablaGuardada[] = [
   },
   {
     tabla: "payer_evidence",
-    queEs: "Evidencia de un posible pagador: tipo, descripción, referencia del documento, quién la registró y fecha.",
-    columnas: ["id", "org_id", "kind", "description", "document_ref", "recorded_by", "recorded_on", "created_at"],
+    queEs: "Evidencia de un posible pagador: tipo, descripción, referencia del documento, quién la registró, fecha y si es simulada.",
+    columnas: ["id", "org_id", "kind", "description", "document_ref", "recorded_by", "recorded_on", "created_at", "simulada"],
   },
   {
     tabla: "published_ledger",
-    queEs: "Las versiones publicadas de este libro. No llevan datos personales.",
+    queEs: "Las versiones publicadas de este libro. Todas son públicas y no llevan datos personales.",
     columnas: ["id", "org_id", "version", "content", "published_at", "viability", "oficial"],
   },
 ];

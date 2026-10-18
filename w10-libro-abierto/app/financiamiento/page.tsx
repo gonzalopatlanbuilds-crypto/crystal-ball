@@ -3,6 +3,7 @@ import CajaViabilidad from "@/components/CajaViabilidad";
 import EstadoBadge from "@/components/EstadoBadge";
 import { createPublicClient } from "@/lib/supabase/publico";
 import { AVISO_PUBLICO } from "@/lib/avisos";
+import { CONSULTA_LIBRO_PUBLICO as Q } from "@/lib/libro-publico";
 import { DATOS_GUARDADOS } from "@/lib/datos-guardados";
 import { leerLibro, NINGUN_PATROCINADOR_PUEDE_CAMBIAR, QUE_DATOS_GUARDAMOS } from "@/lib/libro";
 import type { Cifra } from "@/lib/modelo";
@@ -33,14 +34,12 @@ function LineaCosto({ etiqueta, cifra, total }: { etiqueta: string; cifra: Cifra
 async function leerUltimo() {
   const supabase = createPublicClient();
   if (!supabase) return { error: true as const };
-  // RLS ya limita anon a organizaciones oficiales; el filtro lo hace
-  // explícito.
-  const { data, error } = await supabase
-    .from("published_ledger")
-    .select("version, viability, content, published_at")
-    .eq("oficial", true)
-    .order("published_at", { ascending: false })
-    .limit(1)
+  // La consulta vive en lib/libro-publico.ts (la misma que prueba
+  // test:schema): último snapshot de la org oficial.
+  let consulta = supabase.from(Q.tabla).select(Q.columnas.join(", ")).eq(Q.filtro.columna, Q.filtro.valor);
+  for (const o of Q.orden) consulta = consulta.order(o.columna, { ascending: o.ascendente });
+  const { data, error } = await consulta
+    .limit(Q.limite)
     .maybeSingle<{ version: number; viability: string; content: unknown; published_at: string }>();
   if (error) {
     console.error("financiamiento: lectura falló", error);
@@ -88,7 +87,17 @@ export default async function FinanciamientoPage() {
           </p>
         ) : (
           <>
-            <CajaViabilidad estado={viabilidad} lineas={EXPLICACION_PUBLICA[viabilidad]} />
+            <CajaViabilidad
+              estado={viabilidad}
+              lineas={[
+                ...EXPLICACION_PUBLICA[viabilidad],
+                ...((libro.evidencia_pagador.simuladas ?? 0) > 0
+                  ? [
+                      `La evidencia registrada es simulada (${libro.evidencia_pagador.simuladas} de ${libro.evidencia_pagador.registros}): no hay un pagador real.`,
+                    ]
+                  : []),
+              ]}
+            />
 
             <section>
               <h2 className="text-lg font-bold text-zinc-900">Cuánto cuesta operarlo (simulado)</h2>

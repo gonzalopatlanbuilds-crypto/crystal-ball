@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { CATALOGO, SEMBRADOS } from "../lib/supuestos.ts";
 import { calcularViabilidad } from "../lib/viabilidad.ts";
 import { DATOS_GUARDADOS } from "../lib/datos-guardados.ts";
+import { sqlLibroPublico } from "../lib/libro-publico.ts";
 
 // PRNG con semilla fija: los casos al azar son reproducibles.
 let semillaS = 20261018;
@@ -62,6 +63,14 @@ function check(name, cond, detail) {
   else { fail++; console.log("FAIL", name, JSON.stringify(detail)); }
 }
 const negado = (r) => /permission denied/.test(r.error ?? "");
+// Contenido mínimo válido de un snapshot nuevo (formato 2): la marca de
+// datos simulados y los conteos REALES de evidencia de la org (la base los
+// revisa al publicar). Se leen como superusuario.
+async function contenidoValido(org, viab) {
+  const { registros, simuladas } = (await db.query(
+    `select count(*)::int registros, (count(*) filter (where simulada))::int simuladas from payer_evidence where org_id = $1`, [org])).rows[0];
+  return { viabilidad: viab, datos_simulados: true, evidencia_pagador: { registros, simuladas } };
+}
 const vacioONegado = (r) => (r.rows && r.rows.length === 0) || negado(r);
 
 // ---------- Feature 1: organizaciones ----------
@@ -92,7 +101,9 @@ await db.query(`insert into payer_evidence (org_id, kind, description, document_
 // Desde la Feature 4 solo publica una org oficial y con la viabilidad que
 // calcula la base (las dos tienen evidencia y supuestos inventados).
 await db.query(`update organizations set es_oficial = true where id in ($1, $2)`, [orgA, orgC]);
-await db.query(`insert into published_ledger (org_id, viability, content) values ($1, 'EVIDENCE_RECORDED_NOT_SUPPORTED', '{"viabilidad":"EVIDENCE_RECORDED_NOT_SUPPORTED"}'), ($2, 'EVIDENCE_RECORDED_NOT_SUPPORTED', '{"viabilidad":"EVIDENCE_RECORDED_NOT_SUPPORTED"}')`, [orgA, orgC]);
+for (const org of [orgA, orgC]) {
+  await db.query(`insert into published_ledger (org_id, viability, content) values ($1, 'EVIDENCE_RECORDED_NOT_SUPPORTED', $2::jsonb)`, [org, JSON.stringify(await contenidoValido(org, "EVIDENCE_RECORDED_NOT_SUPPORTED"))]);
+}
 
 const TABLAS = ["organizations", "profiles", "assumptions", "payer_evidence", "published_ledger"];
 for (const t of TABLAS) {
@@ -280,12 +291,13 @@ check("create_org no acepta un segundo intento ni toca es_oficial", !!r.error, r
 // Solo desde el SQL Editor (superusuario):
 await db.query(`update organizations set es_oficial = true where id in ($1, $2)`, [orgD, orgG]);
 
-const pub = (who, org, viab, content = null) =>
+// `extra` se mezcla encima del contenido válido (para los ataques).
+const pub = async (who, org, viab, extra = {}) =>
   as(who, `insert into published_ledger (org_id, viability, content) values ($1, $2, $3::jsonb) returning version, oficial, viability`,
-    [org, viab, JSON.stringify(content ?? { viabilidad: viab })]);
+    [org, viab, JSON.stringify({ ...(await contenidoValido(org, viab)), ...extra })]);
 const pubSuper = async (org, viab, extra = "") => {
   try {
-    const x = await db.query(`insert into published_ledger (org_id, viability, content${extra ? ", version" : ""}) values ($1, $2, $3::jsonb${extra ? ", " + extra : ""}) returning version`, [org, viab, JSON.stringify({ viabilidad: viab })]);
+    const x = await db.query(`insert into published_ledger (org_id, viability, content${extra ? ", version" : ""}) values ($1, $2, $3::jsonb${extra ? ", " + extra : ""}) returning version`, [org, viab, JSON.stringify(await contenidoValido(org, viab))]);
     return { rows: x.rows };
   } catch (e) { return { error: e.message }; }
 };
@@ -321,6 +333,12 @@ r = await pub("D", orgD, "NOT_DEMONSTRATED", { viabilidad: "NOT_DEMONSTRATED", c
 check("ATAQUE: un correo dentro del snapshot → rechazado", /published_ledger_no_email/.test(r.error), r);
 r = await pub("D", orgD, "NOT_DEMONSTRATED", { viabilidad: "NOT_DEMONSTRATED", relleno: "x".repeat(200000) });
 check("ATAQUE: snapshot gigante (200 KB) → rechazado", /published_ledger_content_size/.test(r.error), r);
+{
+  const sinViab = await contenidoValido(orgD, "NOT_DEMONSTRATED");
+  delete sinViab.viabilidad;
+  r = await as("D", `insert into published_ledger (org_id, viability, content) values ($1, 'NOT_DEMONSTRATED', $2::jsonb)`, [orgD, JSON.stringify(sinViab)]);
+  check("ATAQUE: snapshot SIN la clave viabilidad (NULL en el check) → rechazado", /published_ledger_viability_matches_content/.test(r.error), r);
+}
 r = await pub("D", orgD, "TOTALMENTE_VIABLE", { viabilidad: "TOTALMENTE_VIABLE" });
 check("ATAQUE: un estado inventado ('TOTALMENTE_VIABLE') → rechazado", !!r.error, r);
 
@@ -473,6 +491,99 @@ r = {};
 try { await db.exec(schema); await db.exec(schema); } catch (e) { r = { error: e.message }; }
 check("schema corre 2 veces más con libros publicados, sin errores", !r.error, r);
 check("…sin tocar los snapshots, la evidencia ni los triggers", JSON.stringify(antesL) === JSON.stringify(await fotoLibro()), [antesL, await fotoLibro()]);
+
+// ---------- Marca de datos simulados en cada snapshot nuevo ----------
+// Org H oficial con una evidencia simulada (default) y otra marcada real a
+// mano (superusuario: la app no ofrece cómo).
+U.H = "88888888-0000-0000-0000-000000000008";
+await db.query(`insert into auth.users values ($1, 'H@test.mx')`, [U.H]);
+const orgH = (await as("H", `select * from create_org('Oficial con evidencia simulada')`)).rows[0].org_id;
+await db.query(`update organizations set es_oficial = true where id = $1`, [orgH]);
+r = await as("H", `insert into payer_evidence (org_id, kind, description, document_ref, recorded_on) values ($1,'carta_intencion','SIMULADO','SIM-1','2026-10-01') returning simulada`, [orgH]);
+check("evidencia nueva nace simulada = true (default)", r.rows?.[0]?.simulada === true, r);
+r = await as("H", `insert into payer_evidence (org_id, kind, description, document_ref, recorded_on, simulada) values ($1,'otro','x','x','2026-10-01', false)`, [orgH]);
+check("ATAQUE: el cliente no puede marcar una evidencia como real (simulada = false)", negado(r), r);
+r = await as("H", `update payer_evidence set simulada = false returning id`);
+check("ATAQUE: el cliente no puede cambiar simulada después", negado(r) || r.rows?.length === 0, r);
+
+const viabH = await estadoSql(orgH);
+r = await pub("H", orgH, viabH);
+check("snapshot con marca y conteos reales (1 registro, 1 simulada) → se publica", !r.error && r.rows?.[0]?.version === 1, r);
+r = await pub("H", orgH, viabH, { datos_simulados: false });
+check("ATAQUE: snapshot nuevo con datos_simulados = false → rechazado", /published_ledger_marca_simulados/.test(r.error), r);
+const sinMarca = await contenidoValido(orgH, viabH);
+delete sinMarca.datos_simulados;
+r = await as("H", `insert into published_ledger (org_id, viability, content) values ($1, $2, $3::jsonb)`, [orgH, viabH, JSON.stringify(sinMarca)]);
+check("ATAQUE: snapshot nuevo SIN la marca de datos simulados → rechazado", /published_ledger_marca_simulados/.test(r.error), r);
+r = await pub("H", orgH, viabH, { evidencia_pagador: { registros: 1, simuladas: 0 } });
+check("ATAQUE: decir que la evidencia simulada es real (simuladas 0) → rechazado", /no coincide con la evidencia/.test(r.error), r);
+r = await pub("H", orgH, viabH, { evidencia_pagador: { registros: 0, simuladas: 0 } });
+check("ATAQUE: esconder la evidencia en el snapshot (registros 0) → rechazado", /no coincide con la evidencia/.test(r.error), r);
+r = await pub("H", orgH, viabH, { evidencia_pagador: { registros: 1 } });
+check("ATAQUE: snapshot nuevo sin el conteo de simuladas → rechazado", /published_ledger_marca_simulados|no coincide/.test(r.error), r);
+await db.query(`insert into payer_evidence (org_id, kind, description, document_ref, recorded_by, recorded_on, simulada) values ($1,'otro','Real (prueba)','R-1',$2,'2026-10-01', false)`, [orgH, U.H]);
+r = await pub("H", orgH, await estadoSql(orgH));
+check("con 1 simulada y 1 real → el snapshot dice registros 2, simuladas 1 y se publica", !r.error && r.rows?.[0]?.version === 2, r);
+r = (await db.query(`select content -> 'evidencia_pagador' e from published_ledger where org_id = $1 and version = 2`, [orgH])).rows[0].e;
+check("…y eso es lo que queda guardado", r.registros === 2 && r.simuladas === 1, r);
+
+// v1 real se publicó con el formato 1 (sin la marca nueva). Simulación: una
+// fila vieja insertada antes de la regla. Volver a correr el schema no debe
+// fallar (NOT VALID) ni tocarla.
+await db.exec(`alter table published_ledger disable trigger validar_publicacion; alter table published_ledger drop constraint published_ledger_marca_simulados;`);
+await db.query(`insert into published_ledger (org_id, version, viability, content, oficial) values ($1, 99, 'EVIDENCE_RECORDED_NOT_SUPPORTED', '{"formato":1,"simulado":true,"viabilidad":"EVIDENCE_RECORDED_NOT_SUPPORTED","evidencia_pagador":{"registros":2,"tipos":["carta_intencion"]}}', true)`, [orgH]);
+await db.exec(`alter table published_ledger enable trigger validar_publicacion;`);
+r = {};
+try { await db.exec(schema); } catch (e) { r = { error: e.message }; }
+check("con un snapshot formato 1 ya publicado, el schema vuelve a correr sin error (constraint NOT VALID)", !r.error, r);
+r = (await db.query(`select content ->> 'formato' f from published_ledger where org_id = $1 and version = 99`, [orgH])).rows;
+check("…y el snapshot formato 1 sigue intacto", r[0]?.f === "1", r);
+r = (await db.query(`select convalidated from pg_constraint where conname = 'published_ledger_marca_simulados'`)).rows;
+check("…la constraint existe y aplica a lo nuevo (NOT VALID: no revalida lo viejo)", r.length === 1 && r[0].convalidated === false, r);
+await db.exec(`alter table published_ledger disable trigger libro_inmutable;`);
+await db.query(`delete from published_ledger where org_id = $1 and version = 99`, [orgH]);
+await db.exec(`alter table published_ledger enable trigger libro_inmutable;`);
+
+// ---------- La consulta de /financiamiento (lib/libro-publico.ts) ----------
+// La misma consulta que usa la página, traducida a SQL y corrida como anon.
+const libroPublico = async () => (await as("anon", sqlLibroPublico())).rows ?? [];
+const deQuien = async (fila) => fila ? (await db.query(`select org_id from published_ledger where version = $1 and published_at = $2`, [fila.version, fila.published_at])).rows.map((x) => x.org_id) : [];
+const oficialesAntes = (await db.query(`select id from organizations where es_oficial`)).rows.map((x) => x.id);
+
+await db.query(`update organizations set es_oficial = false`);
+r = await libroPublico();
+check("consulta pública: sin ninguna org oficial → 0 filas ('Aún no hay libro publicado')", r.length === 0, r);
+
+await db.query(`update organizations set es_oficial = true where id = $1`, [orgH]);
+const ultimaH = (await db.query(`select max(version)::int v from published_ledger where org_id = $1`, [orgH])).rows[0].v;
+r = await libroPublico();
+check("consulta pública: devuelve la ÚLTIMA versión de la org oficial (no v1)", r.length === 1 && r[0].version === ultimaH && ultimaH >= 2, [r, ultimaH]);
+check("…de la org oficial", (await deQuien(r[0])).includes(orgH));
+
+// Otra org publica DESPUÉS (más reciente) y luego deja de ser oficial.
+await db.query(`update organizations set es_oficial = true where id = $1`, [orgG]);
+await new Promise((res) => setTimeout(res, 20));
+const pG = await pubSuper(orgG, await estadoSql(orgG));
+await db.query(`update organizations set es_oficial = false where id = $1`, [orgG]);
+r = await libroPublico();
+check("consulta pública: ignora un snapshot MÁS RECIENTE de una org no oficial",
+  !pG.error && r.length === 1 && r[0].version === ultimaH && (await deQuien(r[0])).includes(orgH), [pG, r]);
+
+// La org oficial publica otra versión → esa pasa a ser la pública.
+await new Promise((res) => setTimeout(res, 20));
+const nueva = await pub("H", orgH, await estadoSql(orgH));
+r = await libroPublico();
+check("consulta pública: al publicar una versión nueva, se ve solo esa", !nueva.error && r.length === 1 && r[0].version === nueva.rows[0].version, [nueva, r]);
+r = await as("anon", `select count(*)::int n from published_ledger where org_id = $1`, [orgH]);
+check("…y las anteriores siguen públicas por la API (historial)", r.rows?.[0]?.n >= 3, r);
+
+await db.query(`update organizations set es_oficial = (id = any($1::uuid[]))`, [oficialesAntes]);
+
+const ejecutables5 = [];
+for (const fn of (await db.query(`select p.oid, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'`)).rows) {
+  if ((await db.query(`select has_function_privilege('anon', $1::oid, 'execute') e`, [fn.oid])).rows[0].e) ejecutables5.push(fn.proname);
+}
+check("tras el ajuste, anon sigue sin EXECUTE en ninguna función", ejecutables5.length === 0, ejecutables5);
 
 // ---------- HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
