@@ -8,11 +8,19 @@ const ESTILO: Record<Viabilidad, { caja: string; titulo: string }> = {
 
 // La usan /modelo (con lo que falta) y /financiamiento (con la explicación
 // pública). El texto es fijo, en código; nunca lo escribe la IA.
-export default function CajaViabilidad({ estado, lineas }: { estado: Viabilidad; lineas: string[] }) {
+export default function CajaViabilidad({
+  estado,
+  lineas,
+  etiqueta = "Viabilidad:",
+}: {
+  estado: Viabilidad;
+  lineas: string[];
+  etiqueta?: string;
+}) {
   const e = ESTILO[estado];
   return (
     <section className={`rounded-xl border-2 p-4 ${e.caja}`}>
-      <h2 className={`text-xl font-bold ${e.titulo}`}>Viabilidad: {ETIQUETA_VIABILIDAD[estado]}</h2>
+      <h2 className={`text-xl font-bold ${e.titulo}`}>{etiqueta} {ETIQUETA_VIABILIDAD[estado]}</h2>
       {lineas.map((l) => (
         <p key={l} className="mt-1 text-[15px] text-zinc-700">
           {l}

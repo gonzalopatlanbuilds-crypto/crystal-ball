@@ -15,6 +15,21 @@ export const ETIQUETA_VIABILIDAD: Record<Viabilidad, string> = {
   SUPPORTED: "SUSTENTADA",
 };
 
+// Textos de /financiamiento (fijos en código). La etiqueta pública cambia;
+// los valores internos del estado (NOT_DEMONSTRATED, etc.) no.
+export const ETIQUETA_PUBLICA_VIABILIDAD = "¿Alguien paga por esto?";
+export const ACLARACION_VIABILIDAD =
+  "Esto no dice si los resultados del verificador son correctos. Dice si ya hay alguien que pague por operarlo.";
+export const EXPLICACION_10_A_1 =
+  "El 10:1 es la regla que nos pusimos: lo que el pagador evita perder debe ser al menos 10 veces lo que paga.";
+
+// Las líneas que lee el estudiante bajo el estado: la explicación del estado,
+// la aclaración, y la explicación del 10:1 solo si el texto lo menciona.
+export function lineasPublicas(estado: Viabilidad): string[] {
+  const base = EXPLICACION_PUBLICA[estado];
+  return [...base, ACLARACION_VIABILIDAD, ...(base.some((l) => l.includes("10:1")) ? [EXPLICACION_10_A_1] : [])];
+}
+
 // Lo que lee el estudiante en /financiamiento. Texto fijo en código.
 export const EXPLICACION_PUBLICA: Record<Viabilidad, string[]> = {
   NOT_DEMONSTRATED: [

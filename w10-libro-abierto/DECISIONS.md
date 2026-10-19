@@ -753,3 +753,21 @@ producción a propósito (habría costado dinero real).
 **No verificado:** el ancho de teléfono (Chrome se congela con la memoria de
 esta máquina); el auditor en producción con sesión (necesita la llave en
 Vercel y entrar con Google).
+
+## 2026-10-18 — Redacción de /financiamiento (solo texto)
+
+Pedido por Gonzalo. La etiqueta visible "Viabilidad" pasa a "¿Alguien paga
+por esto?" **solo en la página pública** (`/modelo` sigue diciendo
+"Viabilidad"); los valores internos del estado no cambian. Bajo el estado:
+"Esto no dice si los resultados del verificador son correctos. Dice si ya
+hay alguien que pague por operarlo." Donde el texto dice 10:1 se agrega:
+"El 10:1 es la regla que nos pusimos: lo que el pagador evita perder debe
+ser al menos 10 veces lo que paga." (no aparece en NO DEMOSTRADA, que no
+menciona el 10:1). Bajo el subtítulo: "Este libro explica cómo se financia
+el verificador de compatibilidad de laptops de nuestro equipo." Textos en
+`lib/viabilidad.ts` y `lib/libro.ts`; `test:logica` 188/188 (6 nuevas);
+`verificar:deploy` revisa la etiqueta nueva y las dos líneas nuevas.
+
+El mockup `assets/w10-mockup-public.png` **no se cambió**: es una imagen
+del PACKET ya entregado; editarla a mano no sería fiel y alteraría el
+entregable.

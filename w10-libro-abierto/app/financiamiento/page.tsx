@@ -7,7 +7,8 @@ import { CONSULTA_LIBRO_PUBLICO as Q } from "@/lib/libro-publico";
 import { DATOS_GUARDADOS } from "@/lib/datos-guardados";
 import { leerLibro, NINGUN_PATROCINADOR_PUEDE_CAMBIAR, QUE_DATOS_GUARDAMOS } from "@/lib/libro";
 import type { Cifra } from "@/lib/modelo";
-import { EXPLICACION_PUBLICA, VIABILIDADES, type Viabilidad } from "@/lib/viabilidad";
+import { ETIQUETA_PUBLICA_VIABILIDAD, lineasPublicas, VIABILIDADES, type Viabilidad } from "@/lib/viabilidad";
+import { PRESENTACION_LIBRO } from "@/lib/libro";
 
 export const metadata: Metadata = {
   title: "¿Quién paga esto? | Libro Abierto",
@@ -71,6 +72,7 @@ export default async function FinanciamientoPage() {
           <p className="mt-1 text-[15px] text-zinc-600">
             Cómo se financia el verificador de compatibilidad y qué no puede cambiar quien lo financie.
           </p>
+          <p className="mt-1 text-[15px] text-zinc-600">{PRESENTACION_LIBRO}</p>
         </div>
 
         {"error" in r ? (
@@ -89,8 +91,9 @@ export default async function FinanciamientoPage() {
           <>
             <CajaViabilidad
               estado={viabilidad}
+              etiqueta={ETIQUETA_PUBLICA_VIABILIDAD}
               lineas={[
-                ...EXPLICACION_PUBLICA[viabilidad],
+                ...lineasPublicas(viabilidad),
                 ...((libro.evidencia_pagador.simuladas ?? 0) > 0
                   ? [
                       `La evidencia registrada es simulada (${libro.evidencia_pagador.simuladas} de ${libro.evidencia_pagador.registros}): no hay un pagador real.`,

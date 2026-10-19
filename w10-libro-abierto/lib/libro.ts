@@ -131,6 +131,9 @@ export const NINGUN_PATROCINADOR_PUEDE_CAMBIAR = [
   "No hay comisiones por referido ni enlaces de afiliado.",
 ];
 
+export const PRESENTACION_LIBRO =
+  "Este libro explica cómo se financia el verificador de compatibilidad de laptops de nuestro equipo.";
+
 export const QUE_DATOS_GUARDAMOS = [
   "De estudiantes: ninguno. Esta página no pide cuenta.",
   "Solo el equipo inicia sesión para editar el modelo.",

@@ -33,8 +33,9 @@ const tFin = texto(htmlFin);
 check("/financiamiento responde 200 sin sesión", fin.status === 200, `(${fin.status})`);
 check("/financiamiento no fija cookies", !fin.headers.get("set-cookie"), fin.headers.get("set-cookie") ?? "");
 check("/financiamiento muestra el aviso de datos simulados", /Datos simulados/.test(tFin));
-check("/financiamiento muestra un libro publicado (versión y viabilidad)", /Versión publicada: v\d+ - simulada/.test(tFin) && /Viabilidad: /.test(tFin));
+check("/financiamiento muestra un libro publicado (versión y viabilidad)", /Versión publicada: v\d+ - simulada/.test(tFin) && /¿Alguien paga por esto\? /.test(tFin));
 check("/financiamiento muestra 'Lo que ningún patrocinador puede cambiar' y 'Qué datos guardamos'", /Lo que ningún patrocinador puede cambiar/.test(tFin) && /Qué datos guardamos/.test(tFin));
+check("/financiamiento explica qué significa el estado y presenta el libro", /Esto no dice si los resultados del verificador son correctos/.test(tFin) && /Este libro explica cómo se financia el verificador de compatibilidad de laptops/.test(tFin));
 check("/financiamiento no filtra llaves ni correos", !FUGA.test(htmlFin) && !/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}/.test(tFin));
 
 const modelo = await pedir("/modelo");

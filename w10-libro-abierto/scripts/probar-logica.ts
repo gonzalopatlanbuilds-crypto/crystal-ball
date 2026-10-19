@@ -22,9 +22,9 @@ import {
   validarSupuesto,
   type ValoresSupuesto,
 } from "../lib/supuestos.ts";
-import { calcularViabilidad, queFalta } from "../lib/viabilidad.ts";
+import { ACLARACION_VIABILIDAD, calcularViabilidad, ETIQUETA_PUBLICA_VIABILIDAD, EXPLICACION_10_A_1, lineasPublicas, queFalta, VIABILIDADES } from "../lib/viabilidad.ts";
 import { TIPOS_EVIDENCIA, validarEvidencia, type ValoresEvidencia } from "../lib/pagador.ts";
-import { construirLibro, leerLibro, QUE_DATOS_GUARDAMOS } from "../lib/libro.ts";
+import { construirLibro, leerLibro, PRESENTACION_LIBRO, QUE_DATOS_GUARDAMOS } from "../lib/libro.ts";
 import { sqlLibroPublico } from "../lib/libro-publico.ts";
 import { AVISO_PUBLICO } from "../lib/avisos.ts";
 import { auditarSupuestos, ENTRADA_MAX, entradaAuditor } from "../lib/auditor.ts";
@@ -351,6 +351,14 @@ check("guardia: un solo problema rechaza el lote entero", g([
   check("auditor: entrada inflada (> ENTRADA_MAX) no se manda a la API", r2.estado === "error" && (r2.motivo === "entrada demasiado grande" || r2.motivo === "falta ANTHROPIC_API_KEY"), r2);
   check("auditor: una entrada real cabe holgada en ENTRADA_MAX", entradaAuditor(AUDITABLES).length < ENTRADA_MAX / 2, entradaAuditor(AUDITABLES).length);
 }
+// Textos de /financiamiento (cambio de redacción, sin tocar los estados).
+check("etiqueta pública: '¿Alguien paga por esto?'", ETIQUETA_PUBLICA_VIABILIDAD === "¿Alguien paga por esto?");
+check("los valores internos del estado no cambian", VIABILIDADES.join() === "NOT_DEMONSTRATED,EVIDENCE_RECORDED_NOT_SUPPORTED,SUPPORTED");
+check("bajo el estado siempre va la aclaración (en los 3 estados)", VIABILIDADES.every((v) => lineasPublicas(v).includes(ACLARACION_VIABILIDAD)));
+check("la explicación del 10:1 aparece donde el texto dice 10:1", VIABILIDADES.every((v) =>
+  lineasPublicas(v).some((l) => l.includes("10:1") && l !== EXPLICACION_10_A_1) === lineasPublicas(v).includes(EXPLICACION_10_A_1)));
+check("NOT_DEMONSTRATED no menciona el 10:1 ni lo explica", !lineasPublicas("NOT_DEMONSTRATED").includes(EXPLICACION_10_A_1));
+check("presentación del libro", PRESENTACION_LIBRO === "Este libro explica cómo se financia el verificador de compatibilidad de laptops de nuestro equipo.");
 check("numerosEnTexto: '2,000' → 2000, '3%' → 3, '49,5' → 49.5", JSON.stringify(numerosEnTexto("2,000 y 3% y 49,5")) === "[2000,3,49.5]");
 
 const reglas = chequeoPorReglas(AUDITABLES);
