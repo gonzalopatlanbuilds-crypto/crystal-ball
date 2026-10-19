@@ -4,6 +4,8 @@ import TablaSupuestos from "@/components/TablaSupuestos";
 import BloqueResultado from "@/components/BloqueResultado";
 import CajaViabilidad from "@/components/CajaViabilidad";
 import BotonPublicar from "@/components/BotonPublicar";
+import CajaAuditor from "@/components/CajaAuditor";
+import { chequeoPorReglas } from "@/lib/chequeo-reglas";
 import { leerSupuestos } from "@/lib/leer-supuestos";
 import { calcularModelo, pruebaIndependencia } from "@/lib/modelo";
 import { calcularViabilidad, queFalta } from "@/lib/viabilidad";
@@ -93,6 +95,8 @@ export default async function ModeloPage() {
           </p>
         </section>
       )}
+
+      {!error && <CajaAuditor reglas={chequeoPorReglas(filas)} />}
 
       {!fallaLectura && (
         <section>

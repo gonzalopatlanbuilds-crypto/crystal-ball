@@ -27,6 +27,9 @@ import { TIPOS_EVIDENCIA, validarEvidencia, type ValoresEvidencia } from "../lib
 import { construirLibro, leerLibro, QUE_DATOS_GUARDAMOS } from "../lib/libro.ts";
 import { sqlLibroPublico } from "../lib/libro-publico.ts";
 import { AVISO_PUBLICO } from "../lib/avisos.ts";
+import { entradaAuditor } from "../lib/auditor.ts";
+import { numerosEnTexto, revisarObservacionesIA } from "../lib/guardia-auditor.ts";
+import { chequeoPorReglas } from "../lib/chequeo-reglas.ts";
 
 let ok = 0;
 let fail = 0;
@@ -300,6 +303,57 @@ for (const [nombre, malo] of [["null", null], ["texto", "hola"], ["sin costos", 
   ["formato futuro", { ...libro, formato: 3 }], ["cifra con valor texto", { ...libro, costos: { ...libro.costos, total: { calculable: true, valor: "7500", estado: "invented" } } }]] as [string, unknown][]) {
   check(`leerLibro rechaza un snapshot con forma inesperada (${nombre})`, leerLibro(malo) === null);
 }
+
+// ---------- Feature 5: guardia del auditor de IA y revisión por reglas ----------
+const AUDITABLES = conUnidad(SEMBRADOS_MODELO).map((s) => ({ ...s, source_url: null as string | null, source_date: null as string | null }));
+const entradaIA = entradaAuditor(AUDITABLES);
+const clavesIA = [...CLAVES];
+const g = (obs: unknown) => revisarObservacionesIA(obs, entradaIA, clavesIA);
+check("entrada del auditor: claves, valores, estados y fuentes; NUNCA notas", entradaIA.includes("conversion_suscripcion") && entradaIA.includes("inventado") && !/"note"|"nota"/.test(entradaIA));
+check("entrada del auditor: lista las claves sin registrar (pérdida evitada)", entradaIA.includes("perdida_evitada_suscriptor_anio"));
+check("guardia: lista vacía pasa (la IA puede no encontrar nada)", g([]).length === 0);
+check("guardia: observaciones descriptivas con cifras de la entrada pasan", g([
+  { clave: "conversion_suscripcion", texto: "La conversión de 3% no tiene fuente." },
+  { clave: "estudiantes_anio", texto: "Los 2,000 estudiantes al año están marcados como inventados." },
+  { clave: "general", texto: "Ningún supuesto de la lista tiene URL ni fecha de fuente." },
+]).length === 0, g([{ clave: "conversion_suscripcion", texto: "La conversión de 3% no tiene fuente." }]));
+for (const [nombre, obs] of [
+  ["cifra nueva (calculada)", { clave: "general", texto: "El costo mensual sería de 7,500 con estos datos." }],
+  ["cifra nueva (60 suscriptores)", { clave: "conversion_suscripcion", texto: "Con 3% saldrían 60 suscriptores sin fuente." }],
+  ["veredicto: viable", { clave: "general", texto: "Con estos supuestos el proyecto no es viable." }],
+  ["veredicto: viabilidad", { clave: "general", texto: "La falta de fuentes afecta la viabilidad del modelo." }],
+  ["veredicto: rentable", { clave: "precio_mensual", texto: "El precio de 49 no parece rentable." }],
+  ["veredicto: recomendado", { clave: "general", texto: "Se recomienda buscar una fuente para la conversión." }],
+  ["veredicto: garantizado", { clave: "general", texto: "Nada aquí está garantizado por una fuente." }],
+  ["alianza: patrocinador", { clave: "general", texto: "Un patrocinador podría cubrir los costos sin fuente." }],
+  ["alianza: convenio", { clave: "general", texto: "Falta un convenio que respalde estos supuestos." }],
+  ["referidos", { clave: "general", texto: "El ingreso podría venir de comisiones por referido." }],
+  ["cifra en palabras", { clave: "conversion_suscripcion", texto: "La conversión de tres por ciento no tiene fuente." }],
+  ["clave inventada", { clave: "sponsor_bonus", texto: "Este supuesto no tiene fuente registrada." }],
+  ["texto vacío", { clave: "general", texto: "corto" }],
+  ["no es objeto", "La conversión no tiene fuente."],
+] as [string, unknown][]) {
+  check(`guardia rechaza: ${nombre}`, g([obs]).length > 0, g([obs]));
+}
+check("guardia acepta una clave del catálogo que no está registrada (pérdida evitada) — bug de la 1a corrida real", g([{ clave: "perdida_evitada_suscriptor_anio", texto: "Esta clave aparece sin registrar y no tiene valor ni fuente." }]).length === 0, g([{ clave: "perdida_evitada_suscriptor_anio", texto: "Esta clave aparece sin registrar y no tiene valor ni fuente." }]));
+check("guardia rechaza contar supuestos ('Los 8 supuestos')", g([{ clave: "general", texto: "Los 8 supuestos citan la misma fuente genérica." }]).length > 0);
+check("guardia rechaza 'conviene verificar' (no sugiere acciones)", g([{ clave: "general", texto: "La fecha se repite; conviene verificar que sea correcta." }]).length > 0);
+check("entrada del auditor trae la fecha de hoy", /"fecha_de_hoy": "\d{4}-\d{2}-\d{2}"/.test(entradaIA));
+check("guardia rechaza más de 6 observaciones", g(Array.from({ length: 7 }, () => ({ clave: "general", texto: "Ningún supuesto tiene fuente." }))).length > 0);
+check("guardia rechaza algo que no es lista", g({ observaciones: [] }).length > 0);
+check("guardia: un solo problema rechaza el lote entero", g([
+  { clave: "general", texto: "Ningún supuesto tiene fuente." },
+  { clave: "general", texto: "El proyecto es viable." },
+]).length === 1);
+check("numerosEnTexto: '2,000' → 2000, '3%' → 3, '49,5' → 49.5", JSON.stringify(numerosEnTexto("2,000 y 3% y 49,5")) === "[2000,3,49.5]");
+
+const reglas = chequeoPorReglas(AUDITABLES);
+check("reglas con los sembrados: 7 sin fuente + 1 que falta = 8 hallazgos", reglas.length === 8, reglas);
+check("reglas: el que falta es la pérdida evitada", reglas.some((h) => h.clave === "perdida_evitada_suscriptor_anio" && h.texto.includes("no existe")));
+const todosOk = [...AUDITABLES, { key: "perdida_evitada_suscriptor_anio", value_num: 1, unit: "MXN/suscriptor/año", status: "invented" as EstadoSupuesto, source_url: null, source_date: null }]
+  .map((s) => ({ ...s, status: "sustained" as EstadoSupuesto, source_url: "https://ejemplo.org", source_date: "2026-09-01" }));
+check("reglas con todo sustentado: 0 hallazgos", chequeoPorReglas(todosOk).length === 0);
+check("reglas: la salida pasa la misma forma que la IA (clave + texto)", reglas.every((h) => typeof h.clave === "string" && typeof h.texto === "string"));
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);

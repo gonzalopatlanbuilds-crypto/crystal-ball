@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { AVISO_OPERADOR } from "@/lib/avisos";
 
 // /auth/callback manda aquí con ?error=auth cuando el login falla. El
 // Suspense deja que /login siga siendo estática aunque lea la query string.
@@ -45,7 +46,9 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+      <div className="w-full max-w-sm">
+      <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{AVISO_OPERADOR}</p>
+      <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
         <h1 className="text-xl font-bold text-zinc-900">Libro Abierto</h1>
         <p className="mt-2 text-sm text-zinc-600">
           Acceso para el equipo que edita el modelo de costos y
@@ -75,6 +78,7 @@ export default function LoginPage() {
           </Link>
           .
         </p>
+      </div>
       </div>
     </main>
   );
