@@ -27,7 +27,7 @@ import { TIPOS_EVIDENCIA, validarEvidencia, type ValoresEvidencia } from "../lib
 import { construirLibro, leerLibro, QUE_DATOS_GUARDAMOS } from "../lib/libro.ts";
 import { sqlLibroPublico } from "../lib/libro-publico.ts";
 import { AVISO_PUBLICO } from "../lib/avisos.ts";
-import { entradaAuditor } from "../lib/auditor.ts";
+import { auditarSupuestos, ENTRADA_MAX, entradaAuditor } from "../lib/auditor.ts";
 import { numerosEnTexto, revisarObservacionesIA } from "../lib/guardia-auditor.ts";
 import { chequeoPorReglas } from "../lib/chequeo-reglas.ts";
 
@@ -345,6 +345,12 @@ check("guardia: un solo problema rechaza el lote entero", g([
   { clave: "general", texto: "Ningún supuesto tiene fuente." },
   { clave: "general", texto: "El proyecto es viable." },
 ]).length === 1);
+{
+  const enorme = AUDITABLES.map((x) => ({ ...x, source_url: "https://ejemplo.org/" + "x".repeat(2000) }));
+  const r2 = await auditarSupuestos(enorme);
+  check("auditor: entrada inflada (> ENTRADA_MAX) no se manda a la API", r2.estado === "error" && (r2.motivo === "entrada demasiado grande" || r2.motivo === "falta ANTHROPIC_API_KEY"), r2);
+  check("auditor: una entrada real cabe holgada en ENTRADA_MAX", entradaAuditor(AUDITABLES).length < ENTRADA_MAX / 2, entradaAuditor(AUDITABLES).length);
+}
 check("numerosEnTexto: '2,000' → 2000, '3%' → 3, '49,5' → 49.5", JSON.stringify(numerosEnTexto("2,000 y 3% y 49,5")) === "[2000,3,49.5]");
 
 const reglas = chequeoPorReglas(AUDITABLES);

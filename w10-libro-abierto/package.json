@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:schema": "node scripts/probar-schema.mjs",
-    "test:logica": "node scripts/probar-logica.ts"
+    "test:logica": "node scripts/probar-logica.ts",
+    "verificar:deploy": "node scripts/verificar-deploy.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

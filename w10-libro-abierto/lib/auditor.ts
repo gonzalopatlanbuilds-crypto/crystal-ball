@@ -15,6 +15,10 @@ import { AUDITOR_MAX, revisarObservacionesIA, type ObservacionIA } from "./guard
 
 export const MODELO_AUDITOR = "claude-opus-5-5";
 const INTENTOS = 2;
+// Tope explícito de la entrada. Con 8 claves y URLs de hasta 500
+// caracteres (constraints de la base) una entrada real pesa ~3 KB; si algo
+// la infla, no se manda a la API.
+export const ENTRADA_MAX = 8000;
 
 const SYSTEM_PROMPT = `Revisas la lista de supuestos de un modelo simulado de costos de un verificador de compatibilidad de laptops para estudiantes universitarios en México. Una persona del equipo leerá tus observaciones y decidirá qué hacer; tú no decides nada.
 
@@ -79,6 +83,9 @@ export async function auditarSupuestos(
   const cliente = client ?? new Anthropic({ timeout: 60_000, maxRetries: 1 });
 
   const entrada = entradaAuditor(supuestos);
+  if (entrada.length > ENTRADA_MAX || supuestos.length > CLAVES.length) {
+    return { estado: "error", motivo: "entrada demasiado grande" };
+  }
   // Todas las claves del catálogo, no solo las registradas: la IA puede
   // señalar una que falta (bug encontrado con llamadas reales).
   const claves = [...CLAVES];

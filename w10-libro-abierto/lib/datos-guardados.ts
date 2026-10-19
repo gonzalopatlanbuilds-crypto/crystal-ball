@@ -30,6 +30,11 @@ export const DATOS_GUARDADOS: TablaGuardada[] = [
     columnas: ["id", "org_id", "kind", "description", "document_ref", "recorded_by", "recorded_on", "created_at", "simulada"],
   },
   {
+    tabla: "auditor_llamadas",
+    queEs: "Cuándo pidió observaciones al auditor de IA cada persona del equipo, solo para limitar la frecuencia. Se borra después de un día.",
+    columnas: ["id", "user_id", "org_id", "created_at"],
+  },
+  {
     tabla: "published_ledger",
     queEs: "Las versiones publicadas de este libro. Todas son públicas y no llevan datos personales.",
     columnas: ["id", "org_id", "version", "content", "published_at", "viability", "oficial"],

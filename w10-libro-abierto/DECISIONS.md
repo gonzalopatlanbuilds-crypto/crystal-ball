@@ -682,3 +682,74 @@ conteos y `fecha_de_hoy`), `test:schema` 163/163, lint sin warnings.
 **No verificado:** el ancho de teléfono. Chrome dejó de responder al
 capturar (memoria baja en la máquina, ~1 GB libre). Se revisa en el
 deploy 2 o en otra máquina.
+
+## 2026-10-18 — Deploy 2 y commit 7: prueba mecánica completa (PACKET §10)
+
+**Deploy 2** (commits 5 y 6, `bb65af3`): en vivo ~70 s después del push.
+`/login` y `/financiamiento` 200 sin sesión ni cookies, v2 visible con la
+marca de evidencia simulada, `/modelo` → `/login`.
+
+**Prueba mecánica, los 9 puntos del plan:**
+
+| # | Prueba | Resultado | Cómo |
+|---|---|---|---|
+| 1 | Independencia del patrocinador (A, B, ninguno) | OK | Automática: deep equal con 7 valores de sponsor, 300 casos al azar; mutación que favorece a B → 3 FAIL |
+| 2 | Compuerta de viabilidad: sin evidencia nunca SUPPORTED (UI, servidor, base) | OK | Automática (base: API y superusuario; SQL = TS en 60 casos) + manual (UI: v1 y v2 en EVIDENCIA REGISTRADA, NO SUSTENTADA) |
+| 3 | Herencia de estado (derivado = el más débil) | OK | Automática: 300 casos al azar + casos dirigidos |
+| 4 | Validación de formularios (NaN, 1e3, Infinity, miles, coma decimal) | OK | Automática (`leerNumero`, `validarSupuesto`, `validarEvidencia`, constraints) + manual en el navegador (2,000, 1e3, fecha futura, errores bajo cada campo) |
+| 5 | Sin columnas ni rutas de comisión/afiliado/referido | OK | Automática: tablas, columnas, funciones, constraints, triggers, policies, enums, rutas de `app/`, tipos de evidencia, claves del snapshot |
+| 6 | "Qué datos guardamos" = tablas y columnas reales | OK | Automática contra `information_schema` (falló a propósito al agregar `auditor_llamadas` hasta declararla) |
+| 7 | RLS: cada org ve lo suyo; anon solo `published_ledger` oficial; RPCs cerrados a anon | OK | Automática (PGlite) + contra producción con la llave pública (`probar-anon.sh`) |
+| 8 | Guardia de la IA: cifras nuevas, veredictos | OK | Automática (handwritten) + 27 llamadas reales leídas a mano |
+| 9 | Vacíos y ceros: "no calculable", nunca un número inventado | OK | Automática (sin supuestos, 0 estudiantes, precio 0, NaN, sin horas) |
+
+**Ataques probados** (además de los de la Feature 4): con la llave pública
+contra producción (ejecutar los 7 RPCs internos, leer las 4 tablas
+privadas, ver snapshots no oficiales, publicar como anon: todo 401 / `[]`);
+inyecciones en URLs de fuente contra la IA (ignoradas en 6/6); y contra el
+auditor: llamar sin organización, borrar o envejecer el propio registro de
+llamadas para reiniciar el límite, leer el registro, insertar llamadas a
+nombre de otro (todo rechazado tras el fix).
+
+**Revisión del endpoint del auditor (`pedirObservacionesIA`):**
+
+- Sesión: sí (`getUser`, si no → `/login`).
+- Organización: **no se revisaba explícitamente** (sin perfil, RLS daba 0
+  supuestos y no se llamaba a la IA: sin fuga, pero el comentario prometía
+  más de lo que hacía). Ahora se revisa el perfil y la base lo vuelve a
+  exigir.
+- Tamaño de la entrada: acotado por las constraints (8 claves, URLs ≤ 500),
+  pero sin tope explícito. Ahora `ENTRADA_MAX = 8000` caracteres y máximo 8
+  supuestos antes de llamar a la API (una entrada real pesa < 4,000).
+- Errores y llave: el usuario solo ve mensajes genéricos; `error.message` de
+  la API va solo al log del servidor; la llave nunca se devuelve ni se
+  registra. `verificar:deploy` revisa además que ninguna página pública
+  contenga `sk-ant-`, `service_role` ni nombres de variables secretas.
+- **Frecuencia: NO había ningún límite.** Ver el bug.
+
+**Bug real (distinto del de la guardia): el auditor de IA no tenía límite
+de frecuencia.** Cualquier persona con cuenta de Google podía crear una
+organización (`create_org` está abierto) y presionar "Pedir observaciones
+de IA" sin límite; cada llamada a `claude-opus-5-5` se cobra a la llave del
+proyecto. Encontrado en la revisión del endpoint; no se demostró contra
+producción a propósito (habría costado dinero real).
+
+**Fix:**
+
+- Tabla `auditor_llamadas` (sin privilegios para el cliente) y función
+  `registrar_llamada_auditor()` (security definer): exige sesión y
+  organización, **10 llamadas por hora por persona y 30 por día por
+  organización**, lock por org para que dos pestañas no pasen el límite al
+  mismo tiempo, y borra registros de más de un día (minimización). El
+  servidor la llama **antes** de llamar a la API: un intento fallido también
+  cuenta.
+- La tabla aparece en "Qué datos guardamos" (la prueba lo exige).
+- `test:schema` 173/173 (10 nuevas, 4 de ataque). Mutación (límite a 1000)
+  → 2 FAIL; restaurado → 173/173. `test:logica` 182/182 (tope de entrada).
+
+**Nuevo: `npm run verificar:deploy -- <url>`** (`scripts/verificar-deploy.mjs`):
+12 chequeos desde fuera, sin sesión. Contra producción antes del fix: 12 OK.
+
+**No verificado:** el ancho de teléfono (Chrome se congela con la memoria de
+esta máquina); el auditor en producción con sesión (necesita la llave en
+Vercel y entrar con Google).
