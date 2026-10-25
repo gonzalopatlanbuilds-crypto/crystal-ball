@@ -20,7 +20,9 @@ no dictamina cumplimiento, reciclaje ni recuperación.
 
 ## Pruebas
 
+- `npm run test:logica`: lectura y validación del CSV (sin red).
 - `npm run test:schema`: schema en Postgres real (PGlite) con stub de
-  Supabase: RLS, revokes, aislamiento entre organizaciones. Con
+  Supabase: RLS, revokes, aislamiento entre organizaciones, versiones
+  append-only, validación de filas en la base. Con
   `BASE_URL=…` prueba también rutas por HTTP.
 - `bash scripts/probar-anon.sh`: la llave pública contra el proyecto real.

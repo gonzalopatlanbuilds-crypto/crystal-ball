@@ -33,6 +33,11 @@ rpc create_org '{"p_name":"anon test"}'
 rpc join_org '{"p_join_code":"ABC-234"}'
 rpc my_org_id '{}'
 rpc generar_join_code '{}'
+rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false}'
+rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
+rpc huella_evidencia '{"p_rows":[]}'
+rpc evidencia_inmutable '{}'
+rpc evidencia_validar_insert '{}'
 for t in organizations profiles evidence_versions findings decisions; do tabla $t; done
 escribir() {
   printf '%-28s ' "anon escribe $1"
@@ -41,4 +46,11 @@ escribir() {
 }
 escribir evidence_versions "{\"org_id\":\"$Z\",\"uploaded_by\":\"$Z\",\"source_filename\":\"x.csv\",\"raw_rows\":[],\"content_sha256\":\"$(printf 'a%.0s' $(seq 64))\"}"
 escribir decisions "{\"org_id\":\"$Z\",\"finding_id\":\"$Z\",\"decided_by\":\"$Z\",\"decision\":\"confirmed\",\"note\":\"x\"}"
+# Feature 2: anon no edita ni borra versiones. Esperado: 401 o [] (0 filas).
+printf '%-28s ' "anon edita versiones"
+curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/evidence_versions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K"   -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{"source_filename":"editado.csv"}'
+head -c 140 "$T"; echo
+printf '%-28s ' "anon borra versiones"
+curl -s -o "$T" -w '%{http_code} ' -X DELETE "$U/rest/v1/evidence_versions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" -H 'Prefer: return=representation'
+head -c 140 "$T"; echo
 rm -f "$T"
