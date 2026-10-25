@@ -382,3 +382,25 @@ la prueba mecánica final); está cubierta por `test:logica` y
 `test:schema`.
 
 **Falta:** deploy 1 (Vercel) y `verificar:deploy` contra producción.
+
+## 2026-10-25 — Deploy 1 (Vercel)
+
+- Gonzalo creó el proyecto en Vercel (Root Directory
+  `w11-validador-evidencia`, las 2 variables de entorno
+  `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`, Deployment
+  Protection apagado) y configuró Site URL / Redirect URLs en Supabase.
+  Producción: https://w11-validador-evidencia.vercel.app
+- `npm run verificar:deploy -- https://w11-validador-evidencia.vercel.app`
+  desde fuera, sin cookies: **7/7** — `/login` 200 sin sesión, sin muro de
+  Vercel, con el aviso de datos simulados y sin llaves secretas;
+  `/validador` y `/onboarding` → `/login`; ruta inexistente sin 500.
+  Además: `/` → `/login`, `/auth/callback` sin `code` → `/login?error=auth`.
+- El bundle público apunta al proyecto de Supabase de w11 con la URL base
+  (sin `/rest/v1/`), y la única llave que trae es la `anon` (rol del JWT
+  revisado sin imprimirla); ninguna mención de `service_role`.
+- **Login con Google en producción: verificado por Gonzalo** (Chrome se
+  congela en esta máquina, así que lo hizo a mano): selector de cuenta,
+  entra a `/validador` con sus versiones y hallazgos de la org TPK-F9Z, y
+  "Cerrar sesión" regresa a `/login`.
+- **Primer paso de la próxima sesión:** Feature 4 (revisión humana con
+  nota obligatoria y bitácora de decisiones append-only).
