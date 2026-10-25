@@ -83,6 +83,14 @@ warnings), `next start` con una URL de Supabase falsa (sin cookies,
 test:schema`: **50/50**, `/login` → 200, `/validador` → redirect a
 `/login`. Ese build se borró después.
 
-**Falta para cerrar la Feature 1 (no verificado todavía):** proyecto de
-Supabase nuevo para esta semana, proveedor Google, correr `sql/schema.sql`
-y `bash scripts/probar-anon.sh` con la llave pública real.
+**Proyecto real (2026-10-25):** Gonzalo creó el proyecto de Supabase de
+esta semana, corrió `sql/schema.sql` y llenó `.env.local` (formato
+revisado sin imprimir valores: URL base `https://….supabase.co`, llave sin
+espacios, `.env.local` ignorado por git). `bash scripts/probar-anon.sh`
+con la llave pública: los 4 RPCs → 401 `permission denied`, las 5 tablas
+→ `permission denied` (42501), insertar en `evidence_versions` y
+`decisions` → 401. **anon no puede leer ni escribir nada.**
+
+**No verificado todavía:** login con Google contra este proyecto (se
+prueba en el navegador con la Feature 2, que es la primera que necesita
+sesión, y en producción en el deploy 1).
