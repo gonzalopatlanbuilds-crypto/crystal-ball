@@ -440,19 +440,86 @@ create trigger evidence_versions_validar
   before insert on public.evidence_versions
   for each row execute function public.evidencia_validar_insert();
 
--- Guarda TODA carga válida como versión nueva, aunque sus filas sean
--- idénticas a la última (corrección del 2026-10-25, ver DECISIONS.md: el
--- packet dice que cada carga aceptada es una versión). Lo único que
--- cambia en una carga idéntica es la marca identical_to_previous.
--- drop: el tipo de retorno cambió respecto a la primera versión.
+-- registrar_version() (la única puerta de escritura de versiones) se
+-- define en la sección de la Feature 3: desde entonces también guarda los
+-- hallazgos en la misma transacción. Toda carga válida es una versión
+-- nueva, aunque sea idéntica a la última (corrección del 2026-10-25).
+
+-- ============================================================
+-- Feature 3: motor de hallazgos. El motor es código (lib/validador.ts);
+-- la base guarda la versión y sus hallazgos en UNA transacción, nunca
+-- deja que un hallazgo nazca resuelto y nunca deja cambiar su estado
+-- salvo por una decisión humana (Feature 4).
+-- ============================================================
+
+-- Huella de cada hallazgo (tipo + SKU + proveedor + valores en juego): el
+-- mismo hallazgo no se crea dos veces en una organización.
+alter table public.findings add column if not exists fingerprint text;
+alter table public.findings alter column fingerprint set not null;
+alter table public.findings drop constraint if exists findings_fingerprint_check;
+alter table public.findings add constraint findings_fingerprint_check check (char_length(fingerprint) between 1 and 1000);
+create unique index if not exists findings_org_fingerprint on public.findings (org_id, fingerprint);
+create index if not exists findings_version on public.findings (evidence_version_id);
+
+-- Un hallazgo siempre nace pendiente (también desde el SQL Editor), nunca
+-- se borra, y lo único que puede cambiar es su estado, y solo desde el
+-- trigger de decisiones (Feature 4), que enciende validador.desde_decision
+-- dentro de su propia transacción.
+create or replace function public.hallazgo_protegido()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status is distinct from 'pending' then
+      raise exception 'Un hallazgo siempre nace pendiente.' using errcode = 'P0001';
+    end if;
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    if coalesce(current_setting('validador.desde_decision', true), '') <> 'on' then
+      raise exception 'El estado de un hallazgo solo cambia con una decisión humana con nota.' using errcode = 'P0001';
+    end if;
+    if (new.id, new.org_id, new.evidence_version_id, new.type, new.sku, new.supplier, new.details, new.fingerprint, new.created_at)
+       is distinct from
+       (old.id, old.org_id, old.evidence_version_id, old.type, old.sku, old.supplier, old.details, old.fingerprint, old.created_at) then
+      raise exception 'De un hallazgo solo puede cambiar el estado.' using errcode = 'P0001';
+    end if;
+    return new;
+  end if;
+  raise exception 'Los hallazgos no se borran.' using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.hallazgo_protegido() from public, anon, authenticated;
+
+drop trigger if exists findings_protegidos on public.findings;
+create trigger findings_protegidos
+  before insert or update or delete on public.findings
+  for each row execute function public.hallazgo_protegido();
+
+drop trigger if exists findings_sin_truncate on public.findings;
+create trigger findings_sin_truncate
+  before truncate on public.findings
+  for each statement execute function public.hallazgo_protegido();
+
+-- registrar_version ahora también guarda los hallazgos que calculó el
+-- motor, en la misma transacción que la versión. p_base_seq es el seq de
+-- la última versión que el motor vio: si otra carga entró en medio, se
+-- rechaza (la server action vuelve a calcular y reintenta) en vez de
+-- guardar hallazgos calculados contra un historial viejo.
 drop function if exists public.registrar_version(text, jsonb, jsonb, boolean);
-create or replace function public.registrar_version(
+drop function if exists public.registrar_version(text, jsonb, jsonb, boolean, jsonb, bigint);
+create function public.registrar_version(
   p_source_filename text,
   p_raw_rows jsonb,
   p_invalid_rows jsonb,
-  p_is_example boolean
+  p_is_example boolean,
+  p_findings jsonb,
+  p_base_seq bigint
 )
-returns table (version_id uuid, identical_to_previous boolean, uploaded_at timestamptz)
+returns table (version_id uuid, identical_to_previous boolean, uploaded_at timestamptz, findings_created int)
 language plpgsql
 security definer
 set search_path = public
@@ -463,11 +530,15 @@ declare
   v_identica boolean;
   v_fecha timestamptz;
   v_motivo text;
+  v_ultimo bigint;
+  v_creados int := 0;
+  v_n int;
+  h jsonb;
 begin
   if auth.uid() is null or v_org is null then
     raise exception 'Se requiere sesión y organización.' using errcode = 'P0001';
   end if;
-  if p_raw_rows is null or p_invalid_rows is null or p_source_filename is null then
+  if p_raw_rows is null or p_invalid_rows is null or p_source_filename is null or p_findings is null then
     raise exception 'Faltan datos de la carga.' using errcode = 'P0001';
   end if;
   -- Validar antes de tomar el candado: una carga inválida se rechaza sin
@@ -476,18 +547,52 @@ begin
   if v_motivo is not null then
     raise exception 'Versión rechazada: %', v_motivo using errcode = 'P0001';
   end if;
+  if jsonb_typeof(p_findings) is distinct from 'array' or jsonb_array_length(p_findings) > 3000 then
+    raise exception 'Hallazgos inválidos: deben ser un arreglo de máximo 3000.' using errcode = 'P0001';
+  end if;
+  for h in select * from jsonb_array_elements(p_findings) loop
+    if jsonb_typeof(h) is distinct from 'object'
+       or (h ->> 'type') is null or (h ->> 'type') not in ('missing_supplier', 'value_conflict', 'late_revision', 'possible_duplicate')
+       or jsonb_typeof(h -> 'sku') is distinct from 'string'
+       or jsonb_typeof(h -> 'supplier') is distinct from 'string'
+       or jsonb_typeof(h -> 'details') is distinct from 'object'
+       or jsonb_typeof(h -> 'fingerprint') is distinct from 'string'
+       or char_length((h -> 'details')::text) > 20000 then
+      raise exception 'Hallazgo inválido: %', left(h::text, 200) using errcode = 'P0001';
+    end if;
+    -- El cliente no decide el estado: ni siquiera se acepta la clave.
+    if h ? 'status' then
+      raise exception 'Un hallazgo no puede traer estado: nace pendiente.' using errcode = 'P0001';
+    end if;
+  end loop;
 
-  -- Una carga a la vez por org: "¿idéntica a la última?" se decide sobre
-  -- un orden fijo, sin que dos pestañas se crucen.
+  -- Una carga a la vez por org.
   perform pg_advisory_xact_lock(hashtext('carga:' || v_org::text));
+
+  select max(e.seq) into v_ultimo from public.evidence_versions e where e.org_id = v_org;
+  if v_ultimo is distinct from p_base_seq then
+    raise exception 'CAMBIO_CONCURRENTE: otra carga entró mientras se calculaban los hallazgos.' using errcode = 'P0001';
+  end if;
 
   insert into public.evidence_versions (org_id, uploaded_by, source_filename, raw_rows, invalid_rows, content_sha256, is_example)
   values (v_org, auth.uid(), btrim(p_source_filename), p_raw_rows, p_invalid_rows, repeat('0', 64), coalesce(p_is_example, false))
   returning id, evidence_versions.identical_to_previous, evidence_versions.uploaded_at into v_id, v_identica, v_fecha;
 
-  return query select v_id, v_identica, v_fecha;
+  -- Una versión idéntica a la anterior no genera hallazgos, aunque el
+  -- cliente mande alguno.
+  if not v_identica then
+    for h in select * from jsonb_array_elements(p_findings) loop
+      insert into public.findings (org_id, evidence_version_id, type, sku, supplier, details, fingerprint)
+      values (v_org, v_id, h ->> 'type', h ->> 'sku', h ->> 'supplier', h -> 'details', h ->> 'fingerprint')
+      on conflict (org_id, fingerprint) do nothing;
+      get diagnostics v_n = row_count;
+      v_creados := v_creados + v_n;
+    end loop;
+  end if;
+
+  return query select v_id, v_identica, v_fecha, v_creados;
 end;
 $$;
 
-revoke all on function public.registrar_version(text, jsonb, jsonb, boolean) from public, anon;
-grant execute on function public.registrar_version(text, jsonb, jsonb, boolean) to authenticated;
+revoke all on function public.registrar_version(text, jsonb, jsonb, boolean, jsonb, bigint) from public, anon;
+grant execute on function public.registrar_version(text, jsonb, jsonb, boolean, jsonb, bigint) to authenticated;

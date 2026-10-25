@@ -33,7 +33,8 @@ rpc create_org '{"p_name":"anon test"}'
 rpc join_org '{"p_join_code":"ABC-234"}'
 rpc my_org_id '{}'
 rpc generar_join_code '{}'
-rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false}'
+rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false,"p_findings":[],"p_base_seq":null}'
+rpc hallazgo_protegido '{}'
 rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
 rpc huella_evidencia '{"p_rows":[]}'
 rpc evidencia_inmutable '{}'
@@ -52,5 +53,9 @@ curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/evidence_versions?id=neq
 head -c 140 "$T"; echo
 printf '%-28s ' "anon borra versiones"
 curl -s -o "$T" -w '%{http_code} ' -X DELETE "$U/rest/v1/evidence_versions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" -H 'Prefer: return=representation'
+head -c 140 "$T"; echo
+# Feature 3: anon no cambia el estado de un hallazgo. Esperado: 401.
+printf '%-28s ' "anon cambia estado"
+curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/findings?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K"   -H 'Content-Type: application/json' -d '{"status":"confirmed"}'
 head -c 140 "$T"; echo
 rm -f "$T"

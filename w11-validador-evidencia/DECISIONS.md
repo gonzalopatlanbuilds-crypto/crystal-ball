@@ -249,3 +249,136 @@ versión nueva: 10 filas aceptadas" (no idéntica: la última era
 versión nueva, pero sus filas válidas son idénticas a las de la versión
 anterior"; la lista muestra 4 versiones y la más nueva lleva "Idéntica a
 la anterior". Los 4 puntos esperados se cumplieron.
+
+## 2026-10-25 — Feature 3: motor determinista de hallazgos
+
+**Qué cambió:** `lib/validador.ts`, funciones puras sin IA, sin base y sin
+red. La server action lee el historial y los hallazgos de la org (con la
+sesión del usuario, así que RLS aplica), corre el motor y guarda versión +
+hallazgos con `registrar_version()` **en una sola transacción**. La
+pantalla muestra "Hallazgos de esta carga" como en el mockup (SKU, tipo,
+descripción armada por código, estado "Pendiente") y la frase "Cada
+hallazgo requiere revisión humana. El validador no decide cumplimiento."
+
+**Las 4 reglas** (cada una compara contra la **última evidencia aceptada**
+del mismo SKU + proveedor):
+
+- `missing_supplier`: un SKU que el proveedor reportó (en su última fila
+  aceptada) y que no viene en esta carga. **Solo se juzga a los
+  proveedores que vienen en la carga**: un archivo por proveedor es lo
+  normal, así que un archivo solo de Beta no marca faltantes de Alfa.
+- `value_conflict`: el peso o el material cambiaron. Un hallazgo por SKU +
+  proveedor con la lista de cambios, los dos valores y las dos
+  procedencias (archivo + fila; la anterior además con versión, quién y
+  cuándo). El material se compara sin mayúsculas ni espacios extra
+  (`PET` = `pet`).
+- `late_revision`: `packaging_revision_date` es **posterior** (estricto) a
+  la fecha de carga, en hora de CDMX, de la última evidencia aceptada. El
+  mismo día no cuenta.
+- `possible_duplicate`: el folio ya se usó en **otro SKU u otro proveedor**
+  (en una versión anterior o en esta misma carga), sin importar
+  mayúsculas. Etiqueta fija "Posible duplicado, sin verificar".
+
+**"Última aceptada" (decisión de Gonzalo, implementada):** el motor
+reconstruye el historial en orden de `seq` aplicando los estados actuales:
+una fila se acepta si no produjo hallazgos o si **todos** los suyos
+fueron descartados. Un hallazgo pendiente, confirmado **o que nunca se
+guardó** (por ejemplo, versiones subidas antes de existir el motor) deja
+la fila sin aceptar: nada que nadie revisó se vuelve referencia. Las
+versiones marcadas "idéntica a la anterior" se saltan: si no, recargar el
+archivo del 2-oct el día 20 "renovaría" la fecha aceptada y una revisión
+del 9-oct dejaría de ser tardía (lo encontró una prueba de mutación, ver
+abajo).
+
+**No se crea dos veces:** cada hallazgo tiene una huella (`fingerprint`:
+tipo + SKU + proveedor + valores en juego), única por org en la base
+(`on conflict do nothing`). Una carga que repite un problema ya
+registrado no lo duplica; una carga idéntica a la anterior no produce
+ninguno (el motor devuelve `[]` y además la base no guarda hallazgos en
+una versión marcada idéntica, aunque el cliente los mande). Si un SKU
+vuelve, se acepta y luego vuelve a faltar, es un hallazgo nuevo (la huella
+incluye la versión de referencia).
+
+**El estado solo cambia con una decisión:** el RPC rechaza un hallazgo que
+traiga la clave `status`; un trigger exige `pending` en todo insert
+(también desde el SQL Editor), rechaza todo update salvo el que haga el
+flujo de decisiones (Feature 4, que encenderá `validador.desde_decision`
+dentro de su transacción) y aun así solo deja cambiar `status`, y rechaza
+delete y truncate. El cliente no tiene privilegios de escritura sobre
+`findings`.
+
+**Carrera entre dos cargas:** el motor calcula contra el historial que
+leyó; el RPC recibe `p_base_seq` (la última versión que vio) y, con el
+candado de la org tomado, rechaza con `CAMBIO_CONCURRENTE` si entró otra
+carga en medio. La acción recalcula y reintenta una vez.
+
+**Límite honesto de `late_revision`:** necesita evidencia aceptada subida
+un **día anterior**, porque una fecha de revisión no puede estar en el
+futuro (Feature 2). En las pruebas la evidencia base se fecha en el pasado
+como superusuario. En la app real, la prueba 3 del packet solo se puede
+hacer al día siguiente de cargar la evidencia base (la org de prueba ya
+tiene versiones de hoy, 25-oct).
+
+**Pruebas:**
+
+- `npm run test:logica`: **113/113** (42 nuevas): un par antes/después por
+  tipo y sus bordes (archivo de un solo proveedor, mismo día, hora de CDMX
+  vs UTC, SKU nuevo, folio en minúsculas, folio repetido en la primera
+  carga, mismo SKU+proveedor+folio reenviado), dedup, aceptación con cada
+  estado, hallazgo nunca guardado, versión idéntica en medio,
+  determinismo (misma entrada → misma salida, el orden del historial no
+  importa) y textos: ninguno dice "verificado/a" salvo "sin verificar" ni
+  afirma cumplimiento, reciclaje o recuperación.
+- **Prueba de mutación del motor:** 5 mutaciones (aceptar lo confirmado,
+  folio sensible a mayúsculas, no saltar versiones idénticas, `>=` en la
+  fecha, juzgar proveedores ausentes) → 4 detectadas a la primera. La que
+  sobrevivió (no saltar versiones idénticas) mostró que faltaba la prueba
+  de la "fecha renovada"; se agregó y ahora la detecta.
+- `npm run test:schema`: **119/119** (29 nuevas): flujo de punta a punta
+  igual al de la server action, con historial leído bajo RLS: una carga
+  con las 4 situaciones del packet guarda exactamente 5 hallazgos
+  pendientes con valores y procedencias; recarga idéntica → versión nueva
+  con 0 hallazgos aunque el cliente mande uno inventado; repetir problemas
+  + 1 cambio → solo 1 nuevo; hallazgos con `status` o con tipo `cumple` →
+  rechazados; historial viejo → `CAMBIO_CONCURRENTE` sin guardar nada;
+  nadie (dueño, misma org, otra org, anon, service role) cambia el estado,
+  borra o hace truncate; con la bandera de decisión solo cambia el estado
+  (control positivo); otra org no ve nada. Mutaciones del SQL (guardar
+  hallazgos en versiones idénticas, aceptar `status`, quitar la revisión
+  de `p_base_seq`) → cada una con su FAIL; restaurado → 119/119.
+- `npm run verificar:deploy -- <url>` (nuevo, para el deploy 1): `/login`
+  200 sin sesión, sin muro de Vercel, con aviso de datos simulados y sin
+  llaves; `/validador` y `/onboarding` → `/login`; ruta inexistente sin 500.
+- Build limpio, lint sin warnings.
+
+**Bug encontrado antes de la prueba en el navegador:** al simular con el
+motor el historial real de la org de prueba (`scripts/generar-pruebas.ts`),
+el texto del duplicado decía "citado en 3 filas (SIM-1190, SIM-1190,
+SIM-1190)": contaba cada uso del folio (v1, v3 y la misma carga) en vez de
+los pares SKU + proveedor distintos. La huella ya usaba pares distintos;
+solo el texto estaba mal. Arreglado ("también citado para SIM-1190
+(Proveedor Simulado Alfa)") con su prueba: `test:logica` **114/114**.
+
+**Contra el proyecto real (después de que Gonzalo corrió el SQL):**
+`probar-anon.sh`: los RPCs (incluido el nuevo `registrar_version` de 6
+argumentos) → 401; `hallazgo_protegido` → 404 (función de trigger, no
+expuesta); 5 tablas → `permission denied`; anon no cambia el estado de un
+hallazgo → 401. Chrome se volvió a congelar (714 MB de RAM libre), así que
+**Gonzalo hizo la prueba a mano** con los CSV de `docs/pruebas/` (datos
+simulados, generados por `node scripts/generar-pruebas.ts`, que también
+imprime lo que el motor espera contra el historial real), sesión de
+gonzalopatlan.builds, org TPK-F9Z:
+
+1. `f3-1-faltante-conflicto-duplicado.csv` → "4 hallazgos nuevos": conflicto
+   SIM-1190/Alfa 18.2 → 24.5 g, posible duplicado sin verificar en SIM-1190
+   y SIM-2034 (FOL-SIM-0001), y falta de Alfa en SIM-4821; los 4 pendientes.
+2. El mismo archivo otra vez → versión idéntica, 0 hallazgos.
+3. `f3-3-un-cambio-mas.csv` → 1 hallazgo nuevo (SIM-6018/Beta 55 → 60 g),
+   sin repetir los 4 anteriores.
+
+Todo salió como lo predijo el motor. `late_revision` no se puede probar
+todavía en la app real (necesita evidencia de un día anterior; se hará en
+la prueba mecánica final); está cubierta por `test:logica` y
+`test:schema`.
+
+**Falta:** deploy 1 (Vercel) y `verificar:deploy` contra producción.

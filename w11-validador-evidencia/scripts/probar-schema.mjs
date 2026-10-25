@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
 import { leerCsv } from "../lib/csv.ts";
 import { CSV_EJEMPLO, NOMBRE_EJEMPLO } from "../lib/ejemplo.ts";
+import { detectarHallazgos } from "../lib/validador.ts";
 
 // Prueba mecánica de sql/schema.sql en Postgres real (PGlite, WASM), sin
 // Supabase: stub de roles anon/authenticated, auth.uid()/auth.jwt() y los
@@ -88,7 +89,7 @@ async function sembrarSuper(org, user) {
     `insert into evidence_versions (org_id, uploaded_by, source_filename, raw_rows, content_sha256) values ($1, $2, 'simulado.csv', $3, $4) returning id`,
     [org, user, JSON.stringify([FILA]), HASH])).rows[0].id;
   const f = (await db.query(
-    `insert into findings (org_id, evidence_version_id, type, sku, supplier) values ($1, $2, 'value_conflict', 'SIM-001', 'Proveedor Simulado') returning id`,
+    `insert into findings (org_id, evidence_version_id, type, sku, supplier, fingerprint) values ($1, $2, 'value_conflict', 'SIM-001', 'Proveedor Simulado', 'semilla') returning id`,
     [org, v])).rows[0].id;
   await db.query(`insert into decisions (org_id, finding_id, decided_by, decision, note) values ($1, $2, $3, 'confirmed', 'nota simulada')`, [org, f, user]);
   return { v, f };
@@ -162,17 +163,20 @@ check("RLS encendido en todas las tablas de public", sinRls.length === 0, sinRls
 const intentaSuper = async (sql, params) => { try { await db.query(sql, params); return {}; } catch (e) { return { error: e.message }; } };
 r = await intentaSuper(`insert into decisions (org_id, finding_id, decided_by, decision, note) values ($1, $2, $3, 'confirmed', '   ')`, [orgA, filasA.f, U.A]);
 check("decisión con nota vacía (solo espacios) → rechazada por la base", /decisions_note_check/.test(r.error), r);
-r = await intentaSuper(`insert into findings (org_id, evidence_version_id, type, sku) values ($1, $2, 'cumple', 'X')`, [orgA, filasA.v]);
+r = await intentaSuper(`insert into findings (org_id, evidence_version_id, type, sku, fingerprint) values ($1, $2, 'cumple', 'X', 'f-cumple')`, [orgA, filasA.v]);
 check("tipo de hallazgo fuera de la lista → rechazado", /findings_type_check/.test(r.error), r);
-r = await intentaSuper(`insert into findings (org_id, evidence_version_id, type, sku, status) values ($1, $2, 'value_conflict', 'X', 'resuelto')`, [orgA, filasA.v]);
-check("estado de hallazgo fuera de pending/confirmed/discarded → rechazado", /findings_status_check/.test(r.error), r);
+r = await intentaSuper(`insert into findings (org_id, evidence_version_id, type, sku, status, fingerprint) values ($1, $2, 'value_conflict', 'X', 'resuelto', 'f-resuelto')`, [orgA, filasA.v]);
+check("estado de hallazgo fuera de pending/confirmed/discarded → rechazado", /findings_status_check|nace pendiente/.test(r.error), r);
 
 // ---------- Feature 2: carga y versionado append-only ----------
 const ej = leerCsv(CSV_EJEMPLO, "2026-10-25");
 check("el CSV de ejemplo se lee completo (10 filas, 0 rechazadas)", ej.ok && ej.filas.length === 10 && ej.rechazadas.length === 0, ej);
 const filasEj = JSON.stringify(ej.filas);
-const registrar = (who, filas, invalidas = "[]", nombre = "proveedor_octubre.csv", ejemplo = false) =>
-  as(who, `select * from registrar_version($1, $2::jsonb, $3::jsonb, $4)`, [nombre, filas, invalidas, ejemplo]);
+// p_base_seq = la última versión de la org de `who` (como lo haría la
+// server action después de leer el historial).
+const ultimoSeq = async (who) => (await db.query(`select max(e.seq) s from evidence_versions e join profiles p on p.org_id = e.org_id where p.id = $1`, [U[who]])).rows[0]?.s ?? null;
+const registrar = async (who, filas, invalidas = "[]", nombre = "proveedor_octubre.csv", ejemplo = false, hallazgos = "[]", base) =>
+  as(who, `select * from registrar_version($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, $6)`, [nombre, filas, invalidas, ejemplo, hallazgos, base === undefined ? await ultimoSeq(who) : base]);
 const versionesDe = async (org) => (await db.query(`select count(*)::int n from evidence_versions where org_id = $1`, [org])).rows[0].n;
 
 const antesA = await versionesDe(orgA);
@@ -261,6 +265,138 @@ for (const fn of ["validar_filas_evidencia('[]','[]')", "huella_evidencia('[]')"
 }
 r = await ejecutablesPorAnon();
 check("tras la Feature 2, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
+
+// ---------- Feature 3: motor de hallazgos + RPC, de punta a punta ----------
+// Hace lo mismo que la server action: lee el historial y los hallazgos con
+// la sesión de `who` (RLS incluido), corre el motor y guarda con el RPC.
+Object.assign(U, { E: "eeeeeeee-0000-0000-0000-000000000005", F: "ffffffff-0000-0000-0000-000000000006" });
+for (const k of ["E", "F"]) await db.query(`insert into auth.users values ($1, $2)`, [U[k], `${k}@test.mx`]);
+const oe = await as("E", `select * from create_org('Empaques Simulados Tres')`);
+const orgE = oe.rows[0].org_id;
+await as("F", `select * from join_org($1)`, [oe.rows[0].join_code]);
+
+async function leerParaMotor(who) {
+  const h = await as(who, `select id, seq, uploaded_at, uploaded_by, source_filename, identical_to_previous, raw_rows from evidence_versions order by seq`);
+  const g = await as(who, `select fingerprint, status from findings`);
+  const historial = h.rows.map((v) => ({ ...v, seq: Number(v.seq), uploaded_at: new Date(v.uploaded_at).toISOString() }));
+  return { historial, guardados: g.rows, base: historial.length ? historial[historial.length - 1].seq : null };
+}
+async function cargarComoAccion(who, nombre, filas) {
+  const { historial, guardados, base } = await leerParaMotor(who);
+  const nuevos = detectarHallazgos(historial, guardados, { source_filename: nombre, filas });
+  const res = await registrar(who, JSON.stringify(filas), "[]", nombre, false, JSON.stringify(nuevos), base);
+  return { res, nuevos };
+}
+const hallazgosDe = async (who, versionId) =>
+  (await as(who, `select type, sku, supplier, status, details, fingerprint from findings where evidence_version_id = $1 order by type, sku, supplier`, [versionId])).rows;
+const conCambio = (filas, sku, prov, cambio) => filas.map((f) => (f.sku === sku && f.supplier.includes(prov) ? { ...f, ...cambio } : f));
+
+// v1 de la org E: evidencia aceptada el 2-oct (como superusuario, para poder
+// fecharla en el pasado; la validación y la huella las pone igual el trigger).
+await db.query(`insert into evidence_versions (org_id, uploaded_by, source_filename, raw_rows, content_sha256, uploaded_at) values ($1, $2, 'proveedores_septiembre.csv', $3, $4, '2026-10-02 10:00:00-06')`,
+  [orgE, U.E, filasEj, HASH]);
+
+// v2: las 4 situaciones del packet en una sola carga.
+let filasV2 = ej.filas.filter((f) => !(f.sku === "SIM-4821" && f.supplier.includes("Alfa")));
+filasV2 = conCambio(filasV2, "SIM-1190", "Alfa", { weight_g: 24.5 });
+filasV2 = conCambio(filasV2, "SIM-7733", "Beta", { packaging_revision_date: "2026-10-09" });
+filasV2 = conCambio(filasV2, "SIM-2034", "Alfa", { evidence_folio: "FOL-SIM-0001" });
+let c2 = await cargarComoAccion("F", "proveedores_octubre.csv", filasV2);
+const v2E = c2.res.rows?.[0];
+let hE = await hallazgosDe("E", v2E?.version_id);
+const resumen = (hs) => hs.map((h) => `${h.type}:${h.sku}:${h.supplier}`).join(" ; ");
+check("v2: los 4 tipos del packet quedan guardados (5 hallazgos: el folio repetido marca las dos filas)",
+  v2E?.findings_created === 5 && resumen(hE) === [
+    "late_revision:SIM-7733:Proveedor Simulado Beta",
+    "missing_supplier:SIM-4821:Proveedor Simulado Alfa",
+    "possible_duplicate:SIM-1190:Proveedor Simulado Alfa",
+    "possible_duplicate:SIM-2034:Proveedor Simulado Alfa",
+    "value_conflict:SIM-1190:Proveedor Simulado Alfa",
+  ].join(" ; "), [v2E, resumen(hE)]);
+check("v2: todos nacen pendientes", hE.length === 5 && hE.every((h) => h.status === "pending"), hE);
+const conflictoE = hE.find((h) => h.type === "value_conflict");
+check("v2: el conflicto guarda los dos valores y las dos procedencias (archivo + fila)",
+  conflictoE?.details.cambios[0].anterior === 18.2 && conflictoE.details.cambios[0].nuevo === 24.5
+  && conflictoE.details.anterior.archivo === "proveedores_septiembre.csv" && conflictoE.details.anterior.fila === 2
+  && conflictoE.details.nueva.archivo === "proveedores_octubre.csv", conflictoE);
+check("v2: la revisión tardía compara contra la fecha de carga de v1 (2-oct)",
+  hE.find((h) => h.type === "late_revision")?.details.fecha_evidencia_aceptada === "2026-10-02", hE);
+
+// Recarga idéntica: versión nueva, cero hallazgos (aunque el cliente mande
+// hallazgos a mano).
+let c3 = await cargarComoAccion("E", "proveedores_octubre_otra_vez.csv", filasV2);
+check("recarga idéntica: versión nueva, marcada, 0 hallazgos nuevos", c3.res.rows?.[0]?.identical_to_previous === true && c3.res.rows[0].findings_created === 0 && c3.nuevos.length === 0, c3);
+const falso = JSON.stringify([{ type: "value_conflict", sku: "SIM-X", supplier: "P", details: {}, fingerprint: "inventado-1" }]);
+r = await registrar("E", JSON.stringify(filasV2), "[]", "otra.csv", false, falso);
+check("recarga idéntica con un hallazgo inventado por el cliente → la base no lo guarda", r.rows?.[0]?.identical_to_previous === true && r.rows[0].findings_created === 0, r);
+
+// v4: lo mismo + un cambio nuevo → solo el hallazgo nuevo (dedup por huella).
+const filasV4 = conCambio(filasV2, "SIM-6018", "Beta", { weight_g: 60 });
+let c4 = await cargarComoAccion("E", "proveedores_noviembre.csv", filasV4);
+hE = await hallazgosDe("E", c4.res.rows?.[0]?.version_id);
+check("v4 con los mismos 5 problemas + 1 cambio nuevo → solo 1 hallazgo nuevo (SIM-6018)", c4.res.rows?.[0]?.findings_created === 1 && resumen(hE) === "value_conflict:SIM-6018:Proveedor Simulado Beta", [c4.res, resumen(hE)]);
+r = await registrar("E", JSON.stringify(conCambio(filasV4, "SIM-3307", "Alfa", { weight_g: 8 })), "[]", "x.csv", false, JSON.stringify(c2.nuevos));
+check("mandar otra vez hallazgos ya existentes (misma huella) → la base no los duplica", r.rows?.[0]?.findings_created === 0, r);
+
+// La base no acepta hallazgos con estado ni con tipo inventado.
+const v4filas = JSON.stringify(conCambio(filasV4, "SIM-3307", "Alfa", { weight_g: 9 }));
+const unHallazgo = (extra) => JSON.stringify([{ type: "value_conflict", sku: "SIM-3307", supplier: "Proveedor Simulado Alfa", details: {}, fingerprint: "nuevo-x", ...extra }]);
+r = await registrar("E", v4filas, "[]", "x.csv", false, unHallazgo({ status: "confirmed" }));
+check("RPC con un hallazgo que trae status 'confirmed' → rechazado", /nace pendiente/.test(r.error ?? ""), r);
+r = await registrar("E", v4filas, "[]", "x.csv", false, unHallazgo({ type: "cumple" }));
+check("RPC con un hallazgo de tipo 'cumple' → rechazado", /Hallazgo inválido/.test(r.error ?? ""), r);
+
+// Concurrencia: si otra carga entró después de leer el historial, no se
+// guarda nada (la acción recalcula y reintenta).
+const antesE = await versionesDe(orgE);
+const vieja = await ultimoSeq("E");
+await cargarComoAccion("F", "entro_en_medio.csv", conCambio(filasV4, "SIM-5502", "Beta", { weight_g: 3.3 }));
+r = await registrar("E", JSON.stringify(conCambio(filasV4, "SIM-8890", "Alfa", { weight_g: 13 })), "[]", "tarde.csv", false, "[]", vieja);
+check("historial viejo (p_base_seq desactualizado) → CAMBIO_CONCURRENTE, no guarda la versión", /CAMBIO_CONCURRENTE/.test(r.error ?? "") && (await versionesDe(orgE)) === antesE + 1, [r, antesE]);
+
+// El estado solo cambia con una decisión: ni el cliente ni el SQL Editor.
+const idHallazgo = (await db.query(`select id from findings where org_id = $1 and type = 'value_conflict' and sku = 'SIM-1190'`, [orgE])).rows[0].id;
+for (const who of ["E", "F", "C", "anon"]) {
+  r = await as(who, `update findings set status = 'confirmed' where id = $1 returning id`, [idHallazgo]);
+  check(`${who} no puede cambiar el estado de un hallazgo directo`, negado(r) || r.rows?.length === 0, r);
+  r = await as(who, `delete from findings where id = $1 returning id`, [idHallazgo]);
+  check(`${who} no puede borrar un hallazgo`, negado(r) || r.rows?.length === 0, r);
+}
+r = await intentaSuper(`update findings set status = 'discarded' where id = $1`, [idHallazgo]);
+check("ni el service role / SQL Editor cambia el estado sin pasar por una decisión", /decisión humana/.test(r.error ?? ""), r);
+r = await intentaSuper(`delete from findings where id = $1`, [idHallazgo]);
+check("ni el service role / SQL Editor borra un hallazgo", /no se borran/.test(r.error ?? ""), r);
+r = await intentaSuper(`truncate findings cascade`);
+check("ni el service role / SQL Editor hace truncate de hallazgos", /no se borran/.test(r.error ?? ""), r);
+try {
+  await db.exec(`begin; select set_config('validador.desde_decision', 'on', true); update findings set sku = 'OTRO' where id = '${idHallazgo}'; commit;`);
+  r = {};
+} catch (e) {
+  r = { error: e.message };
+  await db.exec(`rollback`).catch(() => {});
+}
+check("aun con la bandera de decisión, de un hallazgo solo cambia el estado (no el SKU)", /solo puede cambiar el estado/.test(r.error ?? ""), r);
+r = (await db.query(`select status from findings where id = $1`, [idHallazgo])).rows[0].status;
+check("el hallazgo sigue pendiente tras todos los intentos", r === "pending", r);
+// Control positivo: el camino que usará la Feature 4 (bandera encendida
+// dentro de la transacción, solo cambia el estado) sí funciona.
+await db.exec(`begin; select set_config('validador.desde_decision', 'on', true); update findings set status = 'confirmed' where id = '${idHallazgo}'; commit;`);
+r = (await db.query(`select status, current_setting('validador.desde_decision', true) bandera from findings where id = $1`, [idHallazgo])).rows[0];
+check("control: con la bandera de decisión, cambiar solo el estado sí funciona (y la bandera no sobrevive a la transacción)", r.status === "confirmed" && (r.bandera ?? "") !== "on", r);
+await db.exec(`begin; select set_config('validador.desde_decision', 'on', true); update findings set status = 'pending' where id = '${idHallazgo}'; commit;`);
+
+// Aislamiento: la otra org (C) no ve nada de E.
+r = await as("C", `select count(*)::int n from findings where org_id = $1`, [orgE]);
+check("C (otra org) no ve hallazgos de E", r.rows?.[0]?.n === 0, r);
+r = await as("C", `select count(*)::int n from evidence_versions where org_id = $1`, [orgE]);
+check("C (otra org) no ve versiones de E", r.rows?.[0]?.n === 0, r);
+
+for (const fn of ["hallazgo_protegido()"]) {
+  r = await as("A", `select ${fn}`);
+  check(`authenticated no ejecuta ${fn} (función de trigger)`, negado(r) || /trigger/.test(r.error ?? ""), r);
+}
+r = await ejecutablesPorAnon();
+check("tras la Feature 3, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
 
 // ---------- HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
