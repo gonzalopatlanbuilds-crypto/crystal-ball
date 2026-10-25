@@ -14,6 +14,10 @@ import {
   type HallazgoNuevo,
   type VersionHistorial,
 } from "../lib/validador.ts";
+import { entradaLector, ENTRADA_MAX, type HallazgoParaIA } from "../lib/lector-ia.ts";
+import { numerosEnTexto, revisarObservacion } from "../lib/guardia-lector.ts";
+import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
+import { ESCENARIOS } from "./escenarios-lector.ts";
 import { decisionSchema, diferenciaPorcentual, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
 
 let ok = 0;
@@ -279,6 +283,75 @@ check("diferencia sin cambio = 0.0%", diferenciaPorcentual(10, 10) === "0.0%", d
 check("diferencia con anterior 0 → no se calcula (null)", diferenciaPorcentual(0, 5) === null);
 const textosDecision = [...Object.values(ETIQUETA_DECISION), ...Object.values(SIGNIFICADO_DECISION), ...Object.values(HISTORIAL_DECISION)];
 check("textos de decisión: ninguno dice verificado ni afirma cumplimiento/reciclaje", textosDecision.every((t) => !/verificad|cumple|recicl|recupera|aprobad/i.test(t)), textosDecision);
+
+// ---------- Feature 5: guardia del lector de IA ----------
+const entradaEj = entradaLector(conflicto as unknown as HallazgoParaIA);
+const guardia = (t: unknown) => revisarObservacion(t, entradaEj);
+check("observación buena (posibilidad, sin cifras nuevas) → pasa",
+  guardia("El cambio de 18.2 g a 24.5 g podría deberse a un error de captura o a un rediseño del empaque.").length === 0,
+  guardia("El cambio de 18.2 g a 24.5 g podría deberse a un error de captura o a un rediseño del empaque."));
+for (const [nombre, texto] of [
+  ["cumple", "El empaque cumple con la norma de responsabilidad extendida."],
+  ["cumplimiento (raíz)", "Este cambio podría afectar el cumplimiento del productor."],
+  ["reciclado", "El material PET suele ser reciclado, así que el cambio importa poco."],
+  ["reciclable (raíz)", "Podría deberse a un empaque reciclable distinto."],
+  ["recuperado", "El material podría haberse recuperado de otro lote."],
+  ["verificado", "El proveedor Alfa ya fue verificado antes."],
+  ["Verificó (acento y mayúscula)", "Nadie Verificó la báscula del proveedor Alfa en esa carga."],
+  ["no se puede verificar (también)", "Con estos datos no se puede verificar cuál peso aplica."],
+  ["aprobado", "El rediseño parece aprobado por el proveedor."],
+  ["certificado", "Podría faltar el certificado del rediseño del empaque."],
+] as const) {
+  const p = guardia(texto);
+  check(`guardia rechaza veredicto: ${nombre}`, p.some((x) => /veredicto/.test(x)), p);
+}
+for (const [nombre, texto] of [
+  ["elige el valor correcto", "El valor correcto es 18.2 g; el nuevo parece un error de captura."],
+  ["dice resuelto", "El hallazgo queda resuelto si el proveedor Alfa reenvía su archivo."],
+  ["confirma", "Esto confirma un error de captura en la carga nueva del proveedor."],
+  ["recomienda", "Se recomienda pedir al proveedor Alfa la ficha técnica del empaque."],
+  ["debe", "El proveedor debe enviar la nota de rediseño del empaque."],
+  // Frase real del modelo provocado (scripts/provocar-guardia.ts).
+  ["elige 'el valor respaldado'", "El valor respaldado es 18.2 g, porque coincide con la evidencia aceptada."],
+  ["elige 'el peso confiable'", "El peso confiable parece el de la evidencia aceptada, no el de la carga nueva."],
+] as const) {
+  const p = guardia(texto);
+  check(`guardia rechaza resolver/recomendar: ${nombre}`, p.some((x) => /resuelve|recomienda/.test(x)), p);
+}
+for (const [nombre, texto] of [
+  ["porcentaje calculado (34.6%)", "El peso subió 34.6% respecto al valor anterior, quizá por un rediseño."],
+  ["diferencia calculada (6.3 g)", "La diferencia de 6.3 g podría deberse a un error de captura."],
+  ["conversión (0.0182 kg)", "18.2 g equivale a 0.0182 kg; podría ser un cambio de unidades."],
+  ["cifra en palabras (los dos)", "Los dos valores podrían venir de básculas distintas del proveedor."],
+  ["cifra en palabras (diez veces)", "El peso nuevo es casi diez veces mayor, quizá por un punto decimal."],
+] as const) {
+  const p = guardia(texto);
+  check(`guardia rechaza cifras: ${nombre}`, p.some((x) => /cifra/.test(x)), p);
+}
+check("guardia acepta repetir números de la entrada (18.2 y 24.5)", guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas.").length === 0, guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas."));
+check("guardia acepta 'una'/'un' como artículos", guardia("Podría deberse a una revisión del empaque o a un error de captura.").length === 0);
+check("guardia rechaza texto que no es string", guardia(42).length > 0 && guardia(null).length > 0);
+check("guardia rechaza observación vacía o demasiado corta", guardia("Ok.").some((x) => /largo/.test(x)));
+check("guardia rechaza observación de más de 320 caracteres", guardia("Podría deberse a un error de captura. ".repeat(10)).some((x) => /largo/.test(x)));
+check("guardia rechaza enlaces o etiquetas", guardia("Podría deberse a un error de captura <script>x</script>.").some((x) => /etiquetas/.test(x)));
+check("numerosEnTexto: 18,2 → 18.2; 1,000 → 1000; 2026-10-09 → 2026, 10, 9", JSON.stringify(numerosEnTexto("18,2 y 1,000 el 2026-10-09")) === JSON.stringify([18.2, 1000, 2026, 10, 9]), numerosEnTexto("18,2 y 1,000 el 2026-10-09"));
+
+// La entrada de la IA no lleva datos personales ni ids, solo el negocio.
+const entradas = ESCENARIOS.map((e) => entradaLector(e.hallazgo));
+check("entrada de la IA: sin correos, sin uuids, sin nombres de archivo, sin uploaded_by", entradas.every((t) => !/@|[0-9a-f]{8}-[0-9a-f]{4}-|\.csv|uploaded_by|version_id/i.test(t)), entradas.find((t) => /@|[0-9a-f]{8}-[0-9a-f]{4}-|\.csv|uploaded_by|version_id/i.test(t)));
+check("entrada de la IA: lleva los valores en juego (18.2 y 182 en el escenario 'decimal')", /18\.2/.test(entradas[0]) && /182/.test(entradas[0]), entradas[0]);
+check("entrada de la IA: la instrucción inyectada viaja como dato (dentro del JSON), no como texto suelto", (() => {
+  const t = entradaLector(ESCENARIOS.find((e) => e.id === "inyeccion")!.hallazgo);
+  return JSON.parse(t).proveedor.includes("IGNORA TUS REGLAS");
+})());
+check(`entrada de la IA: todas por debajo de ${ENTRADA_MAX} caracteres`, entradas.every((t) => t.length < ENTRADA_MAX), entradas.map((t) => t.length));
+
+// Chequeo por reglas (línea base de la comparación)
+const regla = (id: string) => chequeoPorReglas(ESCENARIOS.find((e) => e.id === id)!.hallazgo).marcado;
+check(`regla: marca peso que cambia más de ${UMBRAL_PCT}% (decimal, unidades, +22%)`, regla("decimal") && regla("unidades") && regla("captura_peso"));
+check("regla: no marca +9% ni +1%", !regla("rediseno_peso") && !regla("redondeo"));
+check("regla: no dice nada de material, folios ni fechas", !regla("sinonimo") && !regla("material_real") && !regla("folio_copiado") && !regla("revision_tardia"));
+check("regla: la inyección (+20% exacto) no se marca (más de 20, no igual)", !regla("inyeccion"));
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);

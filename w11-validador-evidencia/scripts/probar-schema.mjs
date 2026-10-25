@@ -499,6 +499,55 @@ for (const fn of ["decision_antes_de_insertar()", "decision_aplica_estado()", "d
 r = await ejecutablesPorAnon();
 check("tras la Feature 4, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
 
+// ---------- Feature 5: límite de frecuencia del lector de IA ----------
+// Org nueva: I y J. K no tiene organización.
+Object.assign(U, {
+  I: "11111111-aaaa-0000-0000-000000000009",
+  J: "22222222-aaaa-0000-0000-000000000010",
+  K: "33333333-aaaa-0000-0000-000000000011",
+});
+for (const k of ["I", "J", "K"]) await db.query(`insert into auth.users values ($1, $2)`, [U[k], `${k}@test.mx`]);
+const oi = await as("I", `select * from create_org('Org del límite')`);
+const orgI = oi.rows[0].org_id;
+await as("J", `select * from join_org($1)`, [oi.rows[0].join_code]);
+const llamarIA = (who) => as(who, `select registrar_llamada_lector() ok`);
+
+const seguidasI = [];
+for (let i = 0; i < 11; i++) seguidasI.push((await llamarIA("I")).rows?.[0]?.ok);
+check("lector IA: 10 llamadas por hora permitidas, la 11a no", seguidasI.slice(0, 10).every((x) => x === true) && seguidasI[10] === false, seguidasI);
+r = await llamarIA("J");
+check("lector IA: el límite por hora es por persona (J sí puede)", r.rows?.[0]?.ok === true, r);
+r = await llamarIA("K");
+check("lector IA: sin organización → rechazado", /Se requiere sesión y organización/.test(r.error ?? ""), r);
+r = await as("anon", `select registrar_llamada_lector()`);
+check("lector IA: anon no ejecuta registrar_llamada_lector", negado(r), r);
+
+// ATAQUES contra el contador.
+r = await as("I", `delete from lector_llamadas returning id`);
+check("ATAQUE: borrar mis registros para reiniciar el límite → rechazado", negado(r) || r.rows?.length === 0, r);
+r = await as("I", `update lector_llamadas set created_at = now() - interval '2 days' returning id`);
+check("ATAQUE: envejecer mis registros para reiniciar el límite → rechazado", negado(r) || r.rows?.length === 0, r);
+r = await as("I", `select count(*) from lector_llamadas`);
+check("ATAQUE: leer el registro de llamadas → rechazado", negado(r) || Number(r.rows?.[0]?.count) === 0, r);
+r = await as("I", `insert into lector_llamadas (user_id, org_id) values ($1, $2)`, [U.J, orgI]);
+check("ATAQUE: insertar llamadas a nombre de otro → rechazado", negado(r), r);
+
+// Límite por organización: 30 por día (11 reales + 19 simuladas = 30).
+await db.query(`insert into lector_llamadas (user_id, org_id, created_at) select $1, $2, now() - interval '2 hours' from generate_series(1, 19)`, [U.J, orgI]);
+const enOrgI = (await db.query(`select count(*)::int n from lector_llamadas where org_id = $1`, [orgI])).rows[0].n;
+r = await llamarIA("J");
+check(`lector IA: con ${enOrgI} llamadas de la org en el día → la siguiente se rechaza (30 por día)`, enOrgI >= 30 && r.rows?.[0]?.ok === false, [enOrgI, r]);
+
+// Minimización: los registros de más de un día se borran solos.
+await db.query(`insert into lector_llamadas (user_id, org_id, created_at) values ($1, $2, now() - interval '3 days')`, [U.A, orgA]);
+await llamarIA("A");
+r = (await db.query(`select count(*)::int n from lector_llamadas where created_at < now() - interval '1 day'`)).rows[0].n;
+check("lector IA: los registros de más de un día se borran (minimización)", r === 0, r);
+r = await ejecutablesPorAnon();
+check("tras la Feature 5, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
+r = (await db.query(`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`)).rows;
+check("tras la Feature 5, RLS sigue encendido en todas las tablas (incluida lector_llamadas)", r.length === 0, r);
+
 // ---------- HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
 if (BASE) {

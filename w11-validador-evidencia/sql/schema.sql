@@ -734,3 +734,62 @@ $$;
 
 revoke all on function public.registrar_decision(uuid, text, text) from public, anon;
 grant execute on function public.registrar_decision(uuid, text, text) to authenticated;
+
+-- ============================================================
+-- Feature 5: límite de frecuencia del lector de IA. Cada llamada se cobra
+-- a la llave del proyecto y cualquiera con Google puede crear una org: sin
+-- límite, alguien podría llamar sin parar (bug real de la prueba mecánica
+-- de w10; aquí entra desde el inicio). Vive en la base porque en Vercel
+-- cada llamada puede caer en una función distinta.
+-- ============================================================
+
+create table if not exists public.lector_llamadas (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  org_id uuid not null references public.organizations (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table public.lector_llamadas enable row level security;
+-- Sin policies y sin privilegios: el cliente no la lee ni la escribe. Solo
+-- registrar_llamada_lector() (security definer).
+revoke all on public.lector_llamadas from anon, authenticated;
+
+create index if not exists lector_llamadas_user_fecha on public.lector_llamadas (user_id, created_at);
+create index if not exists lector_llamadas_org_fecha on public.lector_llamadas (org_id, created_at);
+
+-- true si la llamada está permitida (y la registra), false si se alcanzó
+-- el límite: 10 por hora por persona y 30 por día por organización.
+create or replace function public.registrar_llamada_lector()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.my_org_id();
+begin
+  if auth.uid() is null or v_org is null then
+    raise exception 'Se requiere sesión y organización.' using errcode = 'P0001';
+  end if;
+
+  -- Una llamada a la vez por org: dos pestañas no pasan el límite juntas.
+  perform pg_advisory_xact_lock(hashtext('lector:' || v_org::text));
+
+  -- Minimización de datos: no se guarda más de un día de registros.
+  delete from public.lector_llamadas where created_at < now() - interval '1 day';
+
+  if (select count(*) from public.lector_llamadas
+        where user_id = auth.uid() and created_at > now() - interval '1 hour') >= 10
+     or (select count(*) from public.lector_llamadas
+        where org_id = v_org and created_at > now() - interval '1 day') >= 30 then
+    return false;
+  end if;
+
+  insert into public.lector_llamadas (user_id, org_id) values (auth.uid(), v_org);
+  return true;
+end;
+$$;
+
+revoke all on function public.registrar_llamada_lector() from public, anon;
+grant execute on function public.registrar_llamada_lector() to authenticated;

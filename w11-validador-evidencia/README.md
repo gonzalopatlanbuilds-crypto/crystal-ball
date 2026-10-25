@@ -9,7 +9,8 @@ no dictamina cumplimiento, reciclaje ni recuperación.
 - `docs/PACKET.md`: el qué y el porqué. `DECISIONS.md`: cada decisión y
   cada prueba, en orden.
 - Stack: Next.js (App Router) + Supabase (Postgres, Auth con Google) +
-  Vercel.
+  Vercel + Claude (`claude-opus-5-5`, solo en el servidor, para el lector
+  de IA).
 
 ## Correr local
 
@@ -31,3 +32,10 @@ no dictamina cumplimiento, reciclaje ni recuperación.
 - `bash scripts/probar-anon.sh`: la llave pública contra el proyecto real.
 - `npm run verificar:deploy -- https://…`: un deploy visto desde fuera,
   sin sesión.
+- `node scripts/probar-lector.ts 3`: lector de IA con llamadas reales
+  (rondas de 10 escenarios sembrados; imprime todo para leerlo a mano y lo
+  guarda en `docs/pruebas/`). Cuesta dinero.
+- `node scripts/comparar-lector.ts docs/pruebas/lector-ia-….json`: IA vs.
+  chequeo por reglas, sin volver a llamar a la API.
+- `node scripts/provocar-guardia.ts`: la guardia contra salidas reales
+  provocadas a propósito. Cuesta dinero.

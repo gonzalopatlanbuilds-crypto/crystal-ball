@@ -35,6 +35,7 @@ rpc my_org_id '{}'
 rpc generar_join_code '{}'
 rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false,"p_findings":[],"p_base_seq":null}'
 rpc hallazgo_protegido '{}'
+rpc registrar_llamada_lector '{}'
 rpc registrar_decision '{"p_finding_id":"00000000-0000-0000-0000-000000000000","p_decision":"confirmed","p_note":"x"}'
 rpc decision_antes_de_insertar '{}'
 rpc decision_aplica_estado '{}'
@@ -43,7 +44,7 @@ rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
 rpc huella_evidencia '{"p_rows":[]}'
 rpc evidencia_inmutable '{}'
 rpc evidencia_validar_insert '{}'
-for t in organizations profiles evidence_versions findings decisions; do tabla $t; done
+for t in organizations profiles evidence_versions findings decisions lector_llamadas; do tabla $t; done
 escribir() {
   printf '%-28s ' "anon escribe $1"
   curl -s -o "$T" -w '%{http_code} ' -X POST "$U/rest/v1/$1" -H "apikey: $K" -H "Authorization: Bearer $K"     -H 'Content-Type: application/json' -d "$2"

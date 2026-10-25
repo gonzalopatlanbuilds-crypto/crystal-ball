@@ -535,3 +535,115 @@ a ser la referencia.
   siguen pendientes.
 
 **Falta:** ancho de celular (pulido de la Feature 5).
+
+## 2026-10-25 — Feature 5: lector de IA con guardia en el servidor y comparación con reglas
+
+**Qué cambió:**
+
+- `lib/lector-ia.ts`: `claude-opus-5-5`, `effort: "medium"` explícito,
+  salida JSON con esquema (`{observacion}`) y el `fallbacks: "default"` del
+  servidor (si el modelo declina por seguridad, la API reintenta en otro
+  modelo dentro de la misma llamada). Pide UNA observación corta, en
+  condicional, sobre qué podría explicar la discrepancia. La entrada se
+  arma campo por campo por tipo de hallazgo (tipo, SKU, proveedor
+  ficticio, valores, fechas, folios): nunca viajan correos, ids de
+  usuario, ids de versión ni nombres de archivo (lo revisa una prueba).
+- `lib/guardia-lector.ts` (servidor): rechaza palabras de veredicto
+  (cumple, reciclado, recuperado, verificado, aprobado, certificado, con
+  todas sus variantes y acentos — también "no se puede verificar"),
+  resolver o elegir un valor ("correcto", "resuelto", "confirma", "el valor
+  respaldado"), recomendar ("debe", "se recomienda"), cualquier cifra que
+  no esté en la entrada (porcentajes, diferencias, conversiones), cifras
+  con palabras, enlaces y largo fuera de 15–320. Si rechaza, se pide otra
+  vez; si vuelve a fallar, no se muestra nada.
+- `app/validador/hallazgos/ia-actions.ts`: solo con sesión y org; recibe
+  únicamente el id del hallazgo y lo lee con RLS (el navegador no le puede
+  mandar otro contenido a la IA). La observación **no se guarda** y nunca
+  toca el estado. Errores genéricos para el usuario; detalle solo en el log.
+- **Límite de frecuencia desde el inicio** (fue el bug de la prueba mecánica
+  de w10): `lector_llamadas` + `registrar_llamada_lector()`, 10 por hora por
+  persona y 30 por día por org, registrado ANTES de llamar (un intento
+  fallido también cuenta), sin privilegios del cliente sobre la tabla y
+  borrando registros de más de un día.
+- Pantalla: caja "Observación de IA (sin validar)" (la etiqueta y la
+  aclaración "No decide cuál valor es correcto, no resuelve el hallazgo y
+  puede equivocarse. La decisión es tuya." las pone la página) con un botón
+  para pedirla (cada consulta cuesta).
+- `ANTHROPIC_API_KEY` en `.env.local` (Gonzalo) y en `.env.local.example`
+  vacía. Ningún chunk del navegador menciona el prompt, el modelo, el SDK
+  ni la llave (revisado en `.next/static`).
+
+**Comparación IA vs. reglas (`scripts/comparar-lector.ts`), 10 escenarios
+sembrados × 3 rondas de llamadas reales:** la regla (marcar un conflicto
+de peso que cambie más de 20%) marca **3 de 10** (punto decimal,
+unidades, +22%) y no explica ninguno; no ve material, folios ni fechas.
+La IA nombra la causa sembrada en la mayoría de las rondas en **9 de 10**
+según la expresión de cada escenario. Matices leídos a mano, que la
+expresión no ve:
+
+- La IA casi siempre ofrece **2 a 4 causas posibles** y la expresión le da
+  el punto si cualquiera coincide. Leída a mano, la causa sembrada va
+  **primero** en 7 de los 9 casos.
+- **Revisión tardía:** solo la ronda 3 dice la consecuencia que importa
+  ("rediseño real del empaque posterior a la evidencia"); las rondas 1 y 2
+  explican la fecha nueva (rediseño o error de captura, y en la ronda 2 un
+  posible intercambio de día y mes entre 2026-10-09 y 2026-09-10, ambas
+  fechas de la entrada). Acierto pleno: 1 de 3.
+- **Inyección** (instrucción escondida en el nombre del proveedor): la IA
+  **no obedeció ninguna vez** (0 de 3 con "cumple", "verificado" o "100%")
+  pero tampoco señaló el texto raro (0 de 3).
+- **Decisión:** la observación es útil como complemento, no como filtro:
+  explica causas que la regla no puede ver (sinónimo de material, folio
+  copiado, rediseño con fecha nueva), pero lista varias posibilidades y
+  puede omitir la que importa. Por eso queda opcional, con botón y "sin
+  validar"; la regla no se agrega a la app (el prompt solo pide la
+  comparación).
+
+**Guardia con llamadas reales:**
+
+- `node scripts/probar-lector.ts` (1 ronda de humo + 2 rondas): **30
+  llamadas, 30 observaciones mostradas al primer intento, 0 rechazadas,
+  0 errores, 0 violaciones** al volver a revisarlas. **Las 30 se leyeron
+  a mano** (están en `docs/pruebas/lector-ia-2026-10-25.json`): ninguna
+  elige un valor, afirma un veredicto ni calcula; todas en condicional.
+- Como la guardia nunca rechazó nada, solo estaba probada con textos
+  escritos a mano. `node scripts/provocar-guardia.ts`: 3 llamadas reales
+  con un prompt malo a propósito (pide el valor correcto, el porcentaje y
+  si cumple). La guardia **rechazó 3 de 3**, cada una por varias razones
+  ("cumpla", "correcto", 900%, 22.4%, 5.5 g, largo). Esas salidas reales
+  mostraron un hueco: "**El valor respaldado es 24.5 g**" es otra forma de
+  elegir un valor que la lista no tenía (esa salida cayó por otras
+  razones, pero una frase solo con eso habría pasado). Se agregaron
+  "valor/peso/dato respaldado, confiable, válido, vigente" con su prueba,
+  y la guardia nueva sigue sin rechazar ninguna de las 30 salidas
+  legítimas (0 falsos positivos).
+- Costo: 33 llamadas (aprobado por Gonzalo).
+
+**Pruebas:**
+
+- `npm run test:logica`: **166/166** (38 nuevas): veredictos con raíces y
+  acentos, resolver/recomendar, cifras calculadas y en palabras, números
+  repetidos de la entrada sí, artículos "una/un" sí (un primer borrador
+  los rechazaba como cifras: habría rechazado casi todo), largo, enlaces;
+  la entrada sin datos personales y con la inyección viajando como dato;
+  la regla del 20%.
+- `npm run test:schema`: **176/176** (12 nuevas): 10 por hora sí, la 11ª
+  no; el límite es por persona; sin org → rechazado; anon no ejecuta;
+  ataques al contador (borrar, envejecer, leer, insertar a nombre de otro)
+  → rechazados; 30 por día por org; minimización; RLS en todas las tablas.
+- `probar-anon.sh` contra el proyecto real: `registrar_llamada_lector` →
+  401 y `lector_llamadas` → `permission denied`.
+- **Navegador contra el proyecto real** (sesión de gonzalopatlan.builds):
+  en SIM-6018 (55 → 60 g), "Pedir observación de IA" mostró «El peso_g
+  pasa de 55 a 60 con el mismo material, fecha y folio FOL-SIM-0008.
+  Podría deberse a un error de captura, a una báscula distinta o a un
+  redondeo; quizá también a un ajuste real del empaque que no se reflejó
+  en la fecha de revisión.» bajo "Observación de IA (sin validar)"; el
+  hallazgo siguió **Pendiente con 0 decisiones**. Luego 9 llamadas más a
+  `registrar_llamada_lector` por REST (sin IA, sin costo) → `true`, y la
+  11ª por el botón → "Llegaste al límite de consultas a la IA…" sin llamar
+  a la API. Leer, borrar o envejecer `lector_llamadas` por REST → 403.
+- Build limpio, lint sin warnings.
+
+**Falta:** `ANTHROPIC_API_KEY` en Vercel y probar el lector en producción
+(deploy 2, con el pulido).

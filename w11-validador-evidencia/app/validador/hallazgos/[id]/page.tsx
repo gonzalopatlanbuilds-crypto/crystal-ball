@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import FormularioDecision from "@/components/FormularioDecision";
+import CajaObservacionIA from "@/components/CajaObservacionIA";
 import { fechaHora } from "@/lib/formato";
 import { diferenciaPorcentual, HISTORIAL_DECISION, type Decision } from "@/lib/decisiones";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, type EstadoHallazgo, type TipoHallazgo } from "@/lib/validador";
@@ -174,6 +175,8 @@ export default async function HallazgoPage({ params }: PageProps<"/validador/hal
         )}
         <p className="text-zinc-600">Versión anterior conservada, no sobrescrita.</p>
       </Caja>
+
+      <CajaObservacionIA findingId={h.id} />
 
       <section className="mt-5">
         <h2 className="text-base font-semibold text-zinc-900">Decisión del revisor</h2>
