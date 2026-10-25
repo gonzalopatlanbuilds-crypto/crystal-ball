@@ -121,7 +121,8 @@ subió, filas aceptadas/rechazadas y el detalle de cada rechazo).
   pareja); fechas `AAAA-MM-DD` reales, desde 2000 y no en el futuro (hoy
   en hora de CDMX); texto que empieza con `= + - @` se rechaza (fórmulas
   si alguien abre los datos en una hoja de cálculo).
-- **Recarga idéntica (decisión que el prompt pide documentar):** si las
+- **[REEMPLAZADA el mismo día, ver la corrección de abajo]** **Recarga
+  idéntica (decisión que el prompt pide documentar):** si las
   filas válidas son las mismas que las de la **última** versión de la org
   (huella sha256 sin números de fila: da igual el orden, los saltos de
   línea o las comillas), **no se guarda una versión nueva** y la pantalla
@@ -187,3 +188,64 @@ subió, filas aceptadas/rechazadas y el detalle de cada rechazo).
 
 **No verificado todavía:** ancho de celular (se revisa en el pulido de
 la Feature 5) y producción (deploy 1, después de la Feature 3).
+
+## 2026-10-25 — Corrección de la Feature 2: toda carga válida es una versión
+
+**Qué estaba mal:** con una recarga idéntica a la última versión,
+`registrar_version()` **no guardaba nada** y devolvía la versión vieja. Lo
+confirmó la prueba en el navegador ("Cargar ejemplo" dos veces → seguía
+habiendo 1 versión). Eso contradice el packet ("el archivo se vuelve una
+versión nueva e inmutable"): Gonzalo lo detectó antes del push. El prompt
+permitía las dos opciones si se documentaba; se eligió la equivocada.
+
+**Decisión (de Gonzalo):** **toda carga válida se guarda como versión
+nueva**, tenga o no cambios. Lo que cambia con una carga idéntica no es
+si se guarda, sino que el motor de hallazgos (Feature 3) no genera nada
+nuevo a partir de ella. Queda registro de que alguien volvió a subir lo
+mismo, con su propia procedencia (quién, cuándo, qué archivo).
+
+**Cómo quedó:**
+
+- `evidence_versions.identical_to_previous` (boolean): true si las filas
+  válidas tienen la misma huella que la **versión anterior de la org**
+  (solo la inmediata anterior: volver al contenido de una versión más
+  vieja es un cambio real y no se marca). La calcula el trigger de
+  inserción, igual que la huella; nunca el cliente. Aunque alguien
+  inserte desde el SQL Editor mandando `false`, la base la recalcula.
+  La Feature 3 la leerá para no generar hallazgos.
+- `evidence_versions.seq` (bigint identity): orden exacto de las versiones.
+  `uploaded_at` no bastaba: dos inserciones en la misma transacción
+  comparten `now()` y el desempate era un uuid al azar. La Feature 3
+  necesita saber sin ambigüedad cuál es la última.
+- `registrar_version()` ya no tiene camino de "no guardar": valida, toma
+  el candado de la org, inserta y devuelve `identical_to_previous`. Se
+  hace `drop function` antes de crearla porque cambió su tipo de retorno.
+- Pantalla: "se guardó como una versión nueva, pero sus filas válidas son
+  idénticas a las de la versión anterior: no hay cambios que revisar", y
+  la versión lleva la etiqueta "Idéntica a la anterior" en la lista.
+- En el proyecto real, las 2 versiones que ya existían reciben `seq` al
+  agregar la columna y `identical_to_previous = false` (correcto: ninguna
+  era idéntica a la anterior, porque antes una idéntica no se guardaba).
+
+**Pruebas:** `test:schema` **90/90**. Las 5 pruebas de duplicado se
+invirtieron: recarga idéntica → versión nueva con la marca y con su
+propia procedencia (la subió B); filas reordenadas → versión nueva
+marcada; cambio de peso y vuelta a v1 → versiones nuevas sin marca; otra
+org → sin marca. Nuevas: `seq` estrictamente creciente, y la base
+recalcula la marca y la huella aunque el insert venga del SQL Editor con
+valores falsos. Prueba de mutación: forzar la marca siempre a `false` → 4
+FAIL, exactamente esas; restaurado → 90/90. `test:logica` 71/71, lint y
+build limpios.
+
+**Contra el proyecto real (después de que Gonzalo corrió el SQL):**
+`probar-anon.sh` igual que antes (los 7 RPCs y las 5 tablas negados a la
+llave pública; no inserta, no edita, no borra). Chrome se congeló al
+repetir la prueba en el navegador (705 MB de RAM libre de 7.8 GB; el
+servidor respondía en milisegundos), así que después de 3 intentos se
+paró y **Gonzalo la hizo a mano** en `localhost:3000/validador`, con la
+sesión de gonzalopatlan.builds: "Cargar ejemplo" 1 → "se guardó como una
+versión nueva: 10 filas aceptadas" (no idéntica: la última era
+`proveedor_octubre_malo.csv`); "Cargar ejemplo" 2 → "se guardó como una
+versión nueva, pero sus filas válidas son idénticas a las de la versión
+anterior"; la lista muestra 4 versiones y la más nueva lleva "Idéntica a
+la anterior". Los 4 puntos esperados se cumplieron.

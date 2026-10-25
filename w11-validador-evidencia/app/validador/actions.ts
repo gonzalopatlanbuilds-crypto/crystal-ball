@@ -12,7 +12,7 @@ export type CargaState =
   | {
       archivo: string;
       versionId: string;
-      duplicada: boolean;
+      identicaALaAnterior: boolean;
       aceptadas: number;
       rechazadas: FilaRechazada[];
       columnasIgnoradas: string[];
@@ -20,7 +20,7 @@ export type CargaState =
 
 interface RegistrarVersionRow {
   version_id: string;
-  duplicada: boolean;
+  identical_to_previous: boolean;
 }
 
 // El mismo camino para un archivo subido y para el ejemplo: la validación
@@ -63,7 +63,7 @@ async function procesar(archivo: string, texto: string, esEjemplo: boolean): Pro
   return {
     archivo,
     versionId: fila.version_id,
-    duplicada: fila.duplicada,
+    identicaALaAnterior: fila.identical_to_previous,
     aceptadas: leido.filas.length,
     rechazadas: leido.rechazadas,
     columnasIgnoradas: leido.columnasIgnoradas,

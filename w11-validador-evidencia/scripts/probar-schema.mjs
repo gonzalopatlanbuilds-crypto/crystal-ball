@@ -178,7 +178,7 @@ const versionesDe = async (org) => (await db.query(`select count(*)::int n from 
 const antesA = await versionesDe(orgA);
 r = await registrar("A", filasEj, JSON.stringify([{ fila: 12, motivo: "weight_g: \"1e3\" no es un número válido" }]), NOMBRE_EJEMPLO, true);
 const v1 = r.rows?.[0];
-check("A registra el ejemplo como versión nueva (duplicada = false)", v1 && v1.duplicada === false && (await versionesDe(orgA)) === antesA + 1, r);
+check("A registra el ejemplo como versión nueva (no idéntica a la anterior)", v1 && v1.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 1, r);
 r = await as("B", `select uploaded_by, source_filename, is_example, jsonb_array_length(raw_rows) n, invalid_rows, content_sha256 from evidence_versions where id = $1`, [v1?.version_id]);
 const filaV1 = r.rows?.[0];
 check("procedencia: uploaded_by = quien subió (A), archivo y marca de ejemplo", filaV1?.uploaded_by === U.A && filaV1?.source_filename === NOMBRE_EJEMPLO && filaV1?.is_example === true, r);
@@ -186,19 +186,30 @@ check("B (misma org) ve la versión de A con sus 10 filas", filaV1?.n === 10, r)
 check("las filas rechazadas se guardan con su motivo (no se tiran)", filaV1?.invalid_rows?.[0]?.fila === 12 && /1e3/.test(filaV1?.invalid_rows?.[0]?.motivo), r);
 check("la huella la calcula la base (sha256 hex)", /^[0-9a-f]{64}$/.test(filaV1?.content_sha256 ?? "") && filaV1?.content_sha256 !== "0".repeat(64), r);
 
+// Toda carga válida es una versión nueva, aunque sea idéntica a la última
+// (corrección del 2026-10-25): lo único que cambia es la marca.
 r = await registrar("B", filasEj);
-check("recarga idéntica (por B, misma org) → duplicada, devuelve la versión existente, no guarda", r.rows?.[0]?.duplicada === true && r.rows?.[0]?.version_id === v1?.version_id && (await versionesDe(orgA)) === antesA + 1, r);
+const vIdentica = r.rows?.[0];
+check("recarga idéntica (por B, misma org) → SÍ se guarda como versión nueva, marcada idéntica a la anterior",
+  vIdentica?.identical_to_previous === true && vIdentica.version_id !== v1?.version_id && (await versionesDe(orgA)) === antesA + 2, r);
+r = await as("A", `select uploaded_by, identical_to_previous from evidence_versions where id = $1`, [vIdentica?.version_id]);
+check("…con su propia procedencia (la subió B) y la marca guardada en la tabla", r.rows?.[0]?.uploaded_by === U.B && r.rows?.[0]?.identical_to_previous === true, r);
 const reordenadas = JSON.stringify([...ej.filas].reverse().map((f, i) => ({ ...f, fila: i + 2 })));
 r = await registrar("A", reordenadas);
-check("mismas filas en otro orden (otros números de fila) → duplicada", r.rows?.[0]?.duplicada === true, r);
+check("mismas filas en otro orden (otros números de fila) → versión nueva, idéntica a la anterior", r.rows?.[0]?.identical_to_previous === true && (await versionesDe(orgA)) === antesA + 3, r);
 const cambiada = JSON.stringify(ej.filas.map((f) => (f.sku === "SIM-1190" && /Alfa/.test(f.supplier) ? { ...f, weight_g: 24.5 } : f)));
 r = await registrar("A", cambiada);
 const v2 = r.rows?.[0];
-check("un peso distinto → versión nueva", v2?.duplicada === false && v2.version_id !== v1.version_id && (await versionesDe(orgA)) === antesA + 2, r);
+check("un peso distinto → versión nueva, NO idéntica", v2?.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 4, r);
 r = await registrar("A", filasEj);
-check("volver al contenido de una versión VIEJA (v1) → sí es versión nueva (solo se compara con la última)", r.rows?.[0]?.duplicada === false && (await versionesDe(orgA)) === antesA + 3, r);
+check("volver al contenido de una versión VIEJA (v1) → no idéntica (solo se compara con la última)", r.rows?.[0]?.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 5, r);
 r = await registrar("C", filasEj);
-check("otra org sube el mismo contenido → versión nueva en SU org (la duplicidad es por org)", r.rows?.[0]?.duplicada === false, r);
+check("otra org sube el mismo contenido → no idéntica (la comparación es dentro de la org)", r.rows?.[0]?.identical_to_previous === false, r);
+r = await as("A", `select seq from evidence_versions where org_id = $1 order by seq`, [orgA]);
+check("seq: orden total y estrictamente creciente de las versiones de la org", r.rows?.length === antesA + 5 && r.rows.every((x, k) => k === 0 || Number(x.seq) > Number(r.rows[k - 1].seq)), r);
+await db.query(`insert into evidence_versions (org_id, uploaded_by, source_filename, raw_rows, content_sha256, identical_to_previous) values ($1, $2, 'sql-editor.csv', $3, $4, false)`, [orgA, U.A, filasEj, HASH]);
+r = (await db.query(`select identical_to_previous i, content_sha256 h from evidence_versions where org_id = $1 order by seq desc limit 1`, [orgA])).rows[0];
+check("insertando desde el SQL Editor, la base recalcula la marca y la huella (no confía en lo que le mandan)", r.i === true && r.h !== HASH, r);
 
 // Append-only: nadie edita ni borra, ni el dueño, ni otro de su org, ni
 // otra org, ni el service role.

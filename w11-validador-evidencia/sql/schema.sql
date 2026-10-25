@@ -264,6 +264,16 @@ revoke insert, update, delete, truncate on public.evidence_versions, public.find
 -- RPC directo no puede saltarse la validación ni inventar la huella.
 -- ============================================================
 
+-- Orden exacto de las versiones dentro de una org. uploaded_at no basta:
+-- dos inserciones en la misma transacción comparten now(), y el motor de
+-- hallazgos (Feature 3) necesita saber cuál es la última sin empates.
+alter table public.evidence_versions add column if not exists seq bigint generated always as identity;
+create unique index if not exists evidence_versions_seq on public.evidence_versions (seq);
+create index if not exists evidence_versions_org_seq on public.evidence_versions (org_id, seq);
+-- true si las filas válidas son idénticas a la versión anterior de la org.
+-- La calcula el trigger de inserción, nunca el cliente.
+alter table public.evidence_versions add column if not exists identical_to_previous boolean not null default false;
+
 -- Devuelve null si las filas son válidas; si no, el motivo.
 create or replace function public.validar_filas_evidencia(p_rows jsonb, p_invalid jsonb)
 returns text
@@ -413,6 +423,12 @@ begin
     raise exception 'Versión rechazada: %', v_motivo using errcode = 'P0001';
   end if;
   new.content_sha256 := public.huella_evidencia(new.raw_rows);
+  -- ¿Mismas filas que la última versión de la org? Se guarda igual (toda
+  -- carga válida es una versión); la marca es lo que usa el motor de
+  -- hallazgos (Feature 3) para no generar nada nuevo.
+  new.identical_to_previous := coalesce((
+    select e.content_sha256 = new.content_sha256 from public.evidence_versions e
+      where e.org_id = new.org_id order by e.seq desc limit 1), false);
   return new;
 end;
 $$;
@@ -424,25 +440,27 @@ create trigger evidence_versions_validar
   before insert on public.evidence_versions
   for each row execute function public.evidencia_validar_insert();
 
--- Guarda una carga como versión nueva. Si las filas válidas son idénticas
--- a la ÚLTIMA versión de la org, no guarda nada y devuelve esa versión con
--- duplicada = true (ver DECISIONS.md, Feature 2). Contra versiones más
--- viejas sí se guarda: volver a un valor anterior es un cambio real.
+-- Guarda TODA carga válida como versión nueva, aunque sus filas sean
+-- idénticas a la última (corrección del 2026-10-25, ver DECISIONS.md: el
+-- packet dice que cada carga aceptada es una versión). Lo único que
+-- cambia en una carga idéntica es la marca identical_to_previous.
+-- drop: el tipo de retorno cambió respecto a la primera versión.
+drop function if exists public.registrar_version(text, jsonb, jsonb, boolean);
 create or replace function public.registrar_version(
   p_source_filename text,
   p_raw_rows jsonb,
   p_invalid_rows jsonb,
   p_is_example boolean
 )
-returns table (version_id uuid, duplicada boolean, uploaded_at timestamptz)
+returns table (version_id uuid, identical_to_previous boolean, uploaded_at timestamptz)
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
   v_org uuid := public.my_org_id();
-  v_ultima public.evidence_versions%rowtype;
   v_id uuid;
+  v_identica boolean;
   v_fecha timestamptz;
   v_motivo text;
 begin
@@ -452,29 +470,22 @@ begin
   if p_raw_rows is null or p_invalid_rows is null or p_source_filename is null then
     raise exception 'Faltan datos de la carga.' using errcode = 'P0001';
   end if;
-  -- Validar antes de comparar con la última versión: una carga inválida se
-  -- rechaza aunque sus filas válidas coincidan con lo ya guardado.
+  -- Validar antes de tomar el candado: una carga inválida se rechaza sin
+  -- hacer esperar a nadie.
   v_motivo := public.validar_filas_evidencia(p_raw_rows, p_invalid_rows);
   if v_motivo is not null then
     raise exception 'Versión rechazada: %', v_motivo using errcode = 'P0001';
   end if;
 
-  -- Una carga a la vez por org: dos pestañas no pueden decidir "no es
-  -- duplicada" al mismo tiempo.
+  -- Una carga a la vez por org: "¿idéntica a la última?" se decide sobre
+  -- un orden fijo, sin que dos pestañas se crucen.
   perform pg_advisory_xact_lock(hashtext('carga:' || v_org::text));
-
-  select * into v_ultima from public.evidence_versions e
-    where e.org_id = v_org order by e.uploaded_at desc, e.id desc limit 1;
-  if found and v_ultima.content_sha256 = public.huella_evidencia(p_raw_rows) then
-    return query select v_ultima.id, true, v_ultima.uploaded_at;
-    return;
-  end if;
 
   insert into public.evidence_versions (org_id, uploaded_by, source_filename, raw_rows, invalid_rows, content_sha256, is_example)
   values (v_org, auth.uid(), btrim(p_source_filename), p_raw_rows, p_invalid_rows, repeat('0', 64), coalesce(p_is_example, false))
-  returning id, evidence_versions.uploaded_at into v_id, v_fecha;
+  returning id, evidence_versions.identical_to_previous, evidence_versions.uploaded_at into v_id, v_identica, v_fecha;
 
-  return query select v_id, false, v_fecha;
+  return query select v_id, v_identica, v_fecha;
 end;
 $$;
 

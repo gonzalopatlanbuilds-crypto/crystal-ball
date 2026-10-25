@@ -12,6 +12,7 @@ interface Version {
   raw_rows: FilaEvidencia[];
   invalid_rows: FilaRechazada[];
   is_example: boolean;
+  identical_to_previous: boolean;
 }
 
 export default async function ValidadorPage() {
@@ -19,8 +20,8 @@ export default async function ValidadorPage() {
   const [{ data: versiones, error }, { data: perfiles }] = await Promise.all([
     supabase
       .from("evidence_versions")
-      .select("id, uploaded_at, uploaded_by, source_filename, raw_rows, invalid_rows, is_example")
-      .order("uploaded_at", { ascending: false })
+      .select("id, uploaded_at, uploaded_by, source_filename, raw_rows, invalid_rows, is_example, identical_to_previous")
+      .order("seq", { ascending: false })
       .limit(20)
       .returns<Version[]>(),
     supabase.from("profiles").select("id, email"),
@@ -57,6 +58,11 @@ export default async function ValidadorPage() {
               <li key={v.id} className="rounded-xl border border-zinc-200 bg-white p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="min-w-0 break-all font-medium text-zinc-900">{v.source_filename}</p>
+                  {v.identical_to_previous && (
+                    <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs text-zinc-700">
+                      Idéntica a la anterior
+                    </span>
+                  )}
                   {v.is_example && (
                     <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-900">
                       Ejemplo simulado

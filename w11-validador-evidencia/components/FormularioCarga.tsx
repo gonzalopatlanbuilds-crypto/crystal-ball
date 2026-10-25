@@ -58,10 +58,11 @@ export default function FormularioCarga() {
         <div className="mt-4" aria-live="polite">
           {"error" in resultado ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{resultado.error}</div>
-          ) : resultado.duplicada ? (
+          ) : resultado.identicaALaAnterior ? (
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-              <strong>{resultado.archivo}</strong> tiene exactamente las mismas filas válidas que la última versión. No se
-              guardó una versión nueva y no se crearon hallazgos.
+              <strong>{resultado.archivo}</strong> se guardó como una versión nueva, pero sus filas válidas son idénticas a
+              las de la versión anterior: no hay cambios que revisar.
+              {resultado.rechazadas.length > 0 && ` ${resultado.rechazadas.length} filas rechazadas (abajo, con su motivo).`}
             </div>
           ) : (
             <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
