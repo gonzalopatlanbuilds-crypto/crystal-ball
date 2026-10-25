@@ -226,7 +226,7 @@ create table if not exists public.decisions (
   finding_id uuid not null references public.findings (id) on delete cascade,
   decided_by uuid not null references auth.users (id),
   decision text not null check (decision in ('confirmed', 'discarded')),
-  note text not null check (char_length(btrim(note)) between 1 and 1000),
+  note text not null,
   decided_at timestamptz not null default now()
 );
 
@@ -317,7 +317,7 @@ begin
     if jsonb_typeof(r -> 'sku') is distinct from 'string' or (r ->> 'sku') !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' then
       return 'sku inválido en la fila ' || (r ->> 'fila');
     end if;
-    if jsonb_typeof(r -> 'supplier') is distinct from 'string' or char_length(btrim(r ->> 'supplier')) not between 1 and 120
+    if jsonb_typeof(r -> 'supplier') is distinct from 'string' or (r ->> 'supplier') !~ '\S' or char_length(r ->> 'supplier') > 120
        or (r ->> 'supplier') ~ '^[=+@-]' or (r ->> 'supplier') ~ '[\x01-\x08\x0b-\x1f\x7f]' then
       return 'supplier inválido en la fila ' || (r ->> 'fila');
     end if;
@@ -327,7 +327,7 @@ begin
     if (r ->> 'weight_g')::numeric <= 0 or (r ->> 'weight_g')::numeric > 1000000 then
       return 'weight_g inválido en la fila ' || (r ->> 'fila');
     end if;
-    if jsonb_typeof(r -> 'material') is distinct from 'string' or char_length(btrim(r ->> 'material')) not between 1 and 60
+    if jsonb_typeof(r -> 'material') is distinct from 'string' or (r ->> 'material') !~ '\S' or char_length(r ->> 'material') > 60
        or (r ->> 'material') ~ '^[=+@-]' or (r ->> 'material') ~ '[\x01-\x08\x0b-\x1f\x7f]' then
       return 'material inválido en la fila ' || (r ->> 'fila');
     end if;
@@ -596,3 +596,141 @@ $$;
 
 revoke all on function public.registrar_version(text, jsonb, jsonb, boolean, jsonb, bigint) from public, anon;
 grant execute on function public.registrar_version(text, jsonb, jsonb, boolean, jsonb, bigint) to authenticated;
+
+-- ============================================================
+-- Feature 4: revisión humana y bitácora de decisiones.
+-- Una decisión = una fila nueva en `decisions`, nunca editada ni borrada.
+-- El estado del hallazgo SIEMPRE es el de su última decisión (o pending
+-- si no tiene): lo pone un trigger de `decisions`, así que se cumple por
+-- cualquier camino de inserción, incluido el SQL Editor.
+-- ============================================================
+
+-- Nota: al menos un carácter que no sea espacio en blanco (`\S`), máximo
+-- 1000. Reemplaza el check de la Feature 1, que usaba btrim() y dejaba
+-- pasar una nota de puros saltos de línea o tabs.
+alter table public.decisions drop constraint if exists decisions_note_check;
+alter table public.decisions add constraint decisions_note_check check (note ~ '\S' and char_length(note) <= 1000);
+
+-- Antes de insertar: el org_id de la decisión es el del hallazgo (no lo
+-- elige quien inserta) y la nota se guarda sin espacios sobrantes.
+create or replace function public.decision_antes_de_insertar()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_org uuid;
+begin
+  select f.org_id into v_org from public.findings f where f.id = new.finding_id;
+  if v_org is null then
+    raise exception 'El hallazgo no existe.' using errcode = 'P0001';
+  end if;
+  if new.org_id is distinct from v_org then
+    raise exception 'La decisión no corresponde a la organización del hallazgo.' using errcode = 'P0001';
+  end if;
+  -- btrim() solo quita espacios, no saltos de línea ni tabs (bug real:
+  -- una nota "\n\t" pasaba). Se quita todo espacio en blanco.
+  new.note := regexp_replace(new.note, '^\s+|\s+$', '', 'g');
+  return new;
+end;
+$$;
+
+revoke all on function public.decision_antes_de_insertar() from public, anon, authenticated;
+
+drop trigger if exists decisions_validar on public.decisions;
+create trigger decisions_validar
+  before insert on public.decisions
+  for each row execute function public.decision_antes_de_insertar();
+
+-- Después de insertar: el hallazgo toma el estado de esta decisión. La
+-- bandera validador.desde_decision es la única llave que acepta el trigger
+-- de findings (Feature 3); se enciende y se apaga aquí mismo, para que no
+-- quede encendida en el resto de la transacción.
+create or replace function public.decision_aplica_estado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform set_config('validador.desde_decision', 'on', true);
+  update public.findings set status = new.decision where id = new.finding_id;
+  perform set_config('validador.desde_decision', 'off', true);
+  return new;
+end;
+$$;
+
+revoke all on function public.decision_aplica_estado() from public, anon, authenticated;
+
+drop trigger if exists decisions_aplica_estado on public.decisions;
+create trigger decisions_aplica_estado
+  after insert on public.decisions
+  for each row execute function public.decision_aplica_estado();
+
+-- Append-only, también para el service role y el SQL Editor.
+create or replace function public.decision_inmutable()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'decisions es append-only: una decisión no se edita ni se borra (registra una nueva).'
+    using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.decision_inmutable() from public, anon, authenticated;
+
+drop trigger if exists decisions_sin_update_delete on public.decisions;
+create trigger decisions_sin_update_delete
+  before update or delete on public.decisions
+  for each row execute function public.decision_inmutable();
+
+drop trigger if exists decisions_sin_truncate on public.decisions;
+create trigger decisions_sin_truncate
+  before truncate on public.decisions
+  for each statement execute function public.decision_inmutable();
+
+-- La única puerta para el cliente. decided_by y org_id los pone la base;
+-- la nota es obligatoria (además del check de la tabla).
+create or replace function public.registrar_decision(p_finding_id uuid, p_decision text, p_note text)
+returns table (decision_id uuid, status text, decided_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.my_org_id();
+  v_id uuid;
+  v_fecha timestamptz;
+begin
+  if auth.uid() is null or v_org is null then
+    raise exception 'Se requiere sesión y organización.' using errcode = 'P0001';
+  end if;
+  if p_decision is null or p_decision not in ('confirmed', 'discarded') then
+    raise exception 'La decisión debe ser confirmar o descartar.' using errcode = 'P0001';
+  end if;
+  -- `\S`: al menos un carácter que no sea espacio, salto de línea o tab.
+  if p_note is null or p_note !~ '\S' then
+    raise exception 'La nota es obligatoria.' using errcode = 'P0001';
+  end if;
+  if char_length(regexp_replace(p_note, '^\s+|\s+$', '', 'g')) > 1000 then
+    raise exception 'La nota tiene más de 1000 caracteres.' using errcode = 'P0001';
+  end if;
+  -- Bloquea el hallazgo: dos decisiones simultáneas quedan en orden.
+  perform 1 from public.findings f where f.id = p_finding_id and f.org_id = v_org for update;
+  if not found then
+    -- Mismo mensaje si no existe o es de otra org: no se revela cuál.
+    raise exception 'Hallazgo no encontrado.' using errcode = 'P0001';
+  end if;
+
+  insert into public.decisions (org_id, finding_id, decided_by, decision, note)
+  values (v_org, p_finding_id, auth.uid(), p_decision, p_note)
+  returning id, decisions.decided_at into v_id, v_fecha;
+
+  return query select v_id, p_decision, v_fecha;
+end;
+$$;
+
+revoke all on function public.registrar_decision(uuid, text, text) from public, anon;
+grant execute on function public.registrar_decision(uuid, text, text) to authenticated;

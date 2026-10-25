@@ -35,6 +35,10 @@ rpc my_org_id '{}'
 rpc generar_join_code '{}'
 rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false,"p_findings":[],"p_base_seq":null}'
 rpc hallazgo_protegido '{}'
+rpc registrar_decision '{"p_finding_id":"00000000-0000-0000-0000-000000000000","p_decision":"confirmed","p_note":"x"}'
+rpc decision_antes_de_insertar '{}'
+rpc decision_aplica_estado '{}'
+rpc decision_inmutable '{}'
 rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
 rpc huella_evidencia '{"p_rows":[]}'
 rpc evidencia_inmutable '{}'
@@ -57,5 +61,12 @@ head -c 140 "$T"; echo
 # Feature 3: anon no cambia el estado de un hallazgo. Esperado: 401.
 printf '%-28s ' "anon cambia estado"
 curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/findings?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K"   -H 'Content-Type: application/json' -d '{"status":"confirmed"}'
+head -c 140 "$T"; echo
+# Feature 4: anon no edita ni borra decisiones. Esperado: 401.
+printf '%-28s ' "anon edita decisiones"
+curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/decisions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K"   -H 'Content-Type: application/json' -d '{"note":"editada"}'
+head -c 140 "$T"; echo
+printf '%-28s ' "anon borra decisiones"
+curl -s -o "$T" -w '%{http_code} ' -X DELETE "$U/rest/v1/decisions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K"
 head -c 140 "$T"; echo
 rm -f "$T"

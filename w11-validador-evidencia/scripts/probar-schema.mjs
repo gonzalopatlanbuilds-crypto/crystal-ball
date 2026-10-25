@@ -242,6 +242,8 @@ for (const [nombre, filas, patron] of [
   ["peso negativo", conFila({ weight_g: -5 }), /weight_g/],
   ["sku con espacios", conFila({ sku: "SIM 1" }), /sku/],
   ["proveedor tipo fórmula", conFila({ supplier: "=HYPERLINK(1)" }), /supplier/],
+  ["proveedor de puros saltos de línea/tabs", conFila({ supplier: "\n\t \n" }), /supplier/],
+  ["material de puros saltos de línea/tabs", conFila({ material: "\t\n" }), /material/],
   ["fecha que no existe", conFila({ packaging_revision_date: "2026-02-30" }), /packaging_revision_date/],
   ["columna extra", conFila({ cumple: true }), /columnas/],
   ["sin número de fila", JSON.stringify([{ ...ej.filas[0], fila: undefined }]), /columnas/],
@@ -397,6 +399,105 @@ for (const fn of ["hallazgo_protegido()"]) {
 }
 r = await ejecutablesPorAnon();
 check("tras la Feature 3, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
+
+// ---------- Feature 4: revisión humana y bitácora de decisiones ----------
+const decidir = (who, finding, decision, nota) => as(who, `select * from registrar_decision($1, $2, $3)`, [finding, decision, nota]);
+const estadoDe = async (id) => (await db.query(`select status from findings where id = $1`, [id])).rows[0].status;
+const decisionesDe = async (id) => (await db.query(`select decision, note, decided_by from decisions where finding_id = $1 order by decided_at, id`, [id])).rows;
+const idConflicto = (await db.query(`select id from findings where org_id = $1 and type = 'value_conflict' and sku = 'SIM-1190'`, [orgE])).rows[0].id;
+const idFaltante = (await db.query(`select id from findings where org_id = $1 and type = 'missing_supplier'`, [orgE])).rows[0].id;
+
+// Nota obligatoria: la base la rechaza aunque alguien se salte el servidor.
+for (const [nombre, nota] of [["vacía", ""], ["solo espacios", "   \n\t "], ["null", null]]) {
+  r = await decidir("E", idConflicto, "confirmed", nota);
+  check(`decisión con nota ${nombre} → rechazada por la base`, /nota es obligatoria/.test(r.error ?? ""), r);
+}
+r = await decidir("E", idConflicto, "confirmed", "x".repeat(1001));
+check("nota de 1001 caracteres → rechazada", /más de 1000/.test(r.error ?? ""), r);
+r = await decidir("E", idConflicto, "resuelto", "nota");
+check("decisión fuera de confirmar/descartar ('resuelto') → rechazada", /confirmar o descartar/.test(r.error ?? ""), r);
+check("tras los intentos rechazados, el hallazgo sigue pendiente y sin decisiones", (await estadoDe(idConflicto)) === "pending" && (await decisionesDe(idConflicto)).length === 0);
+
+// Camino feliz: confirmar con nota.
+r = await decidir("F", idConflicto, "confirmed", "  El proveedor Alfa no adjuntó nota de rediseño. ");
+check("F (misma org, no subió la versión) confirma con nota → ok", r.rows?.[0]?.status === "confirmed", r);
+let hist = await decisionesDe(idConflicto);
+check("el hallazgo queda 'confirmed' y hay 1 decisión con quién la tomó", (await estadoDe(idConflicto)) === "confirmed" && hist.length === 1 && hist[0].decided_by === U.F, hist);
+check("la nota se guarda sin espacios sobrantes", hist[0]?.note === "El proveedor Alfa no adjuntó nota de rediseño.", hist);
+
+// Cambio de opinión = fila nueva; el historial nunca se encoge.
+r = await decidir("E", idConflicto, "discarded", "Revisé la ficha técnica simulada: fue error de captura.");
+hist = await decisionesDe(idConflicto);
+check("cambiar de opinión agrega una fila (2 decisiones) y el estado sigue a la última (discarded)", hist.length === 2 && hist.map((d) => d.decision).join() === "confirmed,discarded" && (await estadoDe(idConflicto)) === "discarded", hist);
+r = await decidir("E", idConflicto, "discarded", "Segunda nota con el mismo sentido.");
+check("repetir la misma decisión con otra nota → también se guarda (3 filas)", (await decisionesDe(idConflicto)).length === 3, r);
+
+// Aislamiento y permisos.
+r = await decidir("C", idConflicto, "confirmed", "intento de otra org");
+check("C (otra org) no decide sobre un hallazgo de E (mismo mensaje que 'no existe')", /Hallazgo no encontrado/.test(r.error ?? ""), r);
+r = await decidir("D", idConflicto, "confirmed", "sin org");
+check("usuario sin organización no decide", /organización/.test(r.error ?? ""), r);
+r = await decidir("anon", idConflicto, "confirmed", "anon");
+check("anon no ejecuta registrar_decision", negado(r), r);
+r = await decidir("E", "00000000-0000-0000-0000-000000000000", "confirmed", "no existe");
+check("hallazgo inexistente → 'Hallazgo no encontrado'", /Hallazgo no encontrado/.test(r.error ?? ""), r);
+r = await as("C", `select count(*)::int n from decisions where org_id = $1`, [orgE]);
+check("C (otra org) no ve decisiones de E", r.rows?.[0]?.n === 0, r);
+r = await as("F", `select count(*)::int n from decisions where finding_id = $1`, [idConflicto]);
+check("F (misma org) ve las 3 decisiones", r.rows?.[0]?.n === 3, r);
+
+// Append-only: nadie edita ni borra una decisión.
+const idDecision = (await db.query(`select id from decisions where finding_id = $1 order by decided_at limit 1`, [idConflicto])).rows[0].id;
+for (const who of ["E", "F", "C", "anon"]) {
+  r = await as(who, `update decisions set note = 'editada', decision = 'discarded' where id = $1 returning id`, [idDecision]);
+  check(`${who} no puede editar una decisión`, negado(r) || r.rows?.length === 0, r);
+  r = await as(who, `delete from decisions where id = $1 returning id`, [idDecision]);
+  check(`${who} no puede borrar una decisión`, negado(r) || r.rows?.length === 0, r);
+  r = await as(who, `insert into decisions (org_id, finding_id, decided_by, decision, note) values ($1, $2, $3, 'confirmed', 'directo')`, [orgE, idConflicto, U[who] ?? U.E]);
+  check(`${who} no puede insertar una decisión directo (sin el RPC)`, negado(r), r);
+}
+r = await intentaSuper(`update decisions set note = 'editada' where id = $1`, [idDecision]);
+check("ni el service role / SQL Editor edita una decisión (trigger)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`delete from decisions where id = $1`, [idDecision]);
+check("ni el service role / SQL Editor borra una decisión (trigger)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`truncate decisions`);
+check("ni el service role / SQL Editor hace truncate de decisiones", /append-only/.test(r.error ?? ""), r);
+hist = await decisionesDe(idConflicto);
+check("el historial sigue con 3 decisiones y la primera intacta", hist.length === 3 && hist[0].note === "El proveedor Alfa no adjuntó nota de rediseño.", hist);
+
+// Consistencia por cualquier camino: insertar desde el SQL Editor también
+// mueve el estado; con el org de otra organización, se rechaza.
+await db.query(`insert into decisions (org_id, finding_id, decided_by, decision, note) values ($1, $2, $3, 'confirmed', 'desde el SQL Editor')`, [orgE, idFaltante, U.E]);
+check("decisión insertada desde el SQL Editor → el estado del hallazgo la sigue (confirmed)", (await estadoDe(idFaltante)) === "confirmed");
+r = await intentaSuper(`insert into decisions (org_id, finding_id, decided_by, decision, note) values ($1, $2, $3, 'discarded', 'org equivocada')`, [orgA, idFaltante, U.A]);
+check("decisión con el org de otra organización → rechazada", /no corresponde a la organización/.test(r.error ?? ""), r);
+r = (await db.query(`select current_setting('validador.desde_decision', true) b`)).rows[0].b;
+check("la bandera de decisión no queda encendida después de decidir", (r ?? "") !== "on", r);
+r = await intentaSuper(`update findings set status = 'pending' where id = $1`, [idFaltante]);
+check("después de decidir, el estado sigue sin poder cambiarse directo", /decisión humana/.test(r.error ?? ""), r);
+
+// De punta a punta con el motor. La fila SIM-1190/Alfa de v2 tiene DOS
+// hallazgos: el conflicto (ya descartado) y un posible duplicado
+// (FOL-SIM-0001, pendiente). Una fila se acepta solo si TODOS sus
+// hallazgos están descartados: mientras el duplicado siga pendiente, la
+// referencia sigue siendo 18.2.
+const filasV5 = conCambio(filasV4, "SIM-1190", "Alfa", { weight_g: 30 });
+const c5 = await cargarComoAccion("E", "proveedores_diciembre.csv", filasV5);
+const conflicto5 = (await hallazgosDe("E", c5.res.rows?.[0]?.version_id)).find((h) => h.type === "value_conflict" && h.sku === "SIM-1190");
+check("conflicto descartado pero duplicado PENDIENTE en la misma fila → la referencia sigue siendo 18.2", conflicto5?.details.cambios[0].anterior === 18.2 && conflicto5.details.cambios[0].nuevo === 30, conflicto5 ?? c5);
+const idDup1190 = (await db.query(`select id from findings where org_id = $1 and type = 'possible_duplicate' and sku = 'SIM-1190'`, [orgE])).rows[0].id;
+r = await decidir("F", idDup1190, "discarded", "El folio FOL-SIM-0001 sí es de SIM-1190; SIM-2034 lo citó por error.");
+const filasV6 = conCambio(filasV5, "SIM-3307", "Alfa", { weight_g: 7.6 });
+const c6 = await cargarComoAccion("E", "proveedores_diciembre_b.csv", filasV6);
+const conflicto6 = (await hallazgosDe("E", c6.res.rows?.[0]?.version_id)).find((h) => h.type === "value_conflict" && h.sku === "SIM-1190");
+check("con TODOS los hallazgos de la fila descartados, 24.5 pasa a ser la referencia: el 30 se compara contra 24.5", !r.error && conflicto6?.details.cambios[0].anterior === 24.5 && conflicto6.details.cambios[0].nuevo === 30, conflicto6 ?? c6);
+
+for (const fn of ["decision_antes_de_insertar()", "decision_aplica_estado()", "decision_inmutable()"]) {
+  r = await as("A", `select ${fn}`);
+  check(`authenticated no ejecuta ${fn} (función de trigger)`, negado(r) || /trigger/.test(r.error ?? ""), r);
+}
+r = await ejecutablesPorAnon();
+check("tras la Feature 4, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
 
 // ---------- HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");

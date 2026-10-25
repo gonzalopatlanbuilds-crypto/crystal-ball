@@ -20,12 +20,13 @@ no dictamina cumplimiento, reciclaje ni recuperación.
 
 ## Pruebas
 
-- `npm run test:logica`: lectura y validación del CSV y motor de
-  hallazgos (`lib/validador.ts`), sin red.
+- `npm run test:logica`: lectura y validación del CSV, motor de
+  hallazgos (`lib/validador.ts`) y decisiones, sin red.
 - `npm run test:schema`: schema en Postgres real (PGlite) con stub de
   Supabase: RLS, revokes, aislamiento entre organizaciones, versiones
   append-only, validación de filas en la base, hallazgos de punta a punta
-  y estado que solo cambia con una decisión. Con
+  estado que solo cambia con una decisión, nota obligatoria y bitácora
+  append-only. Con
   `BASE_URL=…` prueba también rutas por HTTP.
 - `bash scripts/probar-anon.sh`: la llave pública contra el proyecto real.
 - `npm run verificar:deploy -- https://…`: un deploy visto desde fuera,

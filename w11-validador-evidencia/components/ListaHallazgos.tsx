@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { describirHallazgo, ETIQUETA_ESTADO, ETIQUETA_TIPO, type Detalles, type EstadoHallazgo, type TipoHallazgo } from "@/lib/validador";
 
 export interface HallazgoFila {
@@ -17,11 +18,16 @@ const ESTILO_ESTADO: Record<EstadoHallazgo, string> = {
 
 // Tarjetas como el mockup: SKU, tipo, descripción (la arma el código, no la
 // IA) y el estado. Ningún hallazgo se resuelve solo.
+// Cada tarjeta lleva a la revisión del hallazgo.
 export default function ListaHallazgos({ hallazgos }: { hallazgos: HallazgoFila[] }) {
   return (
     <ul className="space-y-3">
       {hallazgos.map((h) => (
-        <li key={h.id} className="rounded-xl border border-zinc-200 bg-white p-4">
+        <li key={h.id}>
+          <Link
+            href={`/validador/hallazgos/${h.id}`}
+            className="block rounded-xl border border-zinc-200 bg-white p-4 hover:border-[#0b5e52] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b5e52]"
+          >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="break-all font-semibold text-zinc-900">{h.sku}</p>
@@ -33,6 +39,7 @@ export default function ListaHallazgos({ hallazgos }: { hallazgos: HallazgoFila[
             <span className={`shrink-0 rounded-full border px-3 py-1 text-xs ${ESTILO_ESTADO[h.status]}`}>{ETIQUETA_ESTADO[h.status]}</span>
           </div>
           <p className="mt-2 break-words text-sm text-zinc-700">{describirHallazgo(h)}</p>
+          </Link>
         </li>
       ))}
     </ul>

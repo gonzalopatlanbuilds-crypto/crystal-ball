@@ -404,3 +404,134 @@ la prueba mecánica final); está cubierta por `test:logica` y
   "Cerrar sesión" regresa a `/login`.
 - **Primer paso de la próxima sesión:** Feature 4 (revisión humana con
   nota obligatoria y bitácora de decisiones append-only).
+
+## 2026-10-25 — Feature 4: revisión humana y bitácora de decisiones
+
+**Qué cambió:**
+
+- `/validador/hallazgos`: todos los hallazgos de la org con filtro por
+  estado (Pendiente, Confirmado, Descartado, Todos) y el conteo de cada
+  uno; por defecto, los pendientes. Un valor desconocido en `?estado=`
+  cae en pendientes. Muestra los 200 más recientes (y lo dice si hay más).
+- `/validador/hallazgos/[id]` (mockup, pantalla 2): título "SKU — tipo",
+  caja de datos según el tipo (en un conflicto de peso, los dos valores y
+  la diferencia porcentual calculada por código, "+34.6% respecto al valor
+  anterior"), procedencia de los dos lados (archivo, fila, quién, cuándo;
+  "Versión anterior conservada, no sobrescrita"), los dos botones del
+  mockup ("Confirmar discrepancia" / "Descartar (error)") con una línea
+  que dice qué significa cada uno para la evidencia aceptada, la nota
+  obligatoria y el historial completo de la más vieja a la más nueva,
+  marcando la vigente. Un id que no es uuid o de otra org → 404 (RLS).
+- Navegación "Cargar evidencia" / "Hallazgos" y las tarjetas de hallazgos
+  llevan a su revisión.
+
+**Base (`sql/schema.sql`):**
+
+- `registrar_decision(finding, decision, note)` (security definer) es la
+  única puerta del cliente: exige sesión y org, `confirmed|discarded`, nota
+  con al menos un carácter que no sea espacio en blanco y máximo 1000;
+  bloquea el hallazgo (`for update`) para que dos decisiones simultáneas
+  queden en orden; "Hallazgo no encontrado" igual si no existe o si es de
+  otra org (no revela cuál).
+- **El estado del hallazgo es siempre el de su última decisión**: lo pone
+  un trigger `after insert` de `decisions`, así que se cumple por cualquier
+  camino (también una fila insertada desde el SQL Editor). Ese trigger
+  enciende la bandera `validador.desde_decision` (la única llave que
+  acepta el trigger de `findings` de la Feature 3) y la apaga en la misma
+  función, para que no quede encendida en el resto de la transacción.
+- Un trigger `before insert` pone el `org_id` del hallazgo (rechaza otro)
+  y quita los espacios sobrantes de la nota.
+- `decisions` es append-only: el cliente no tiene privilegios de escritura
+  y un trigger rechaza update, delete y truncate para todos. Cambiar de
+  opinión es una fila nueva; repetir la misma decisión con otra nota
+  también se permite (agrega información, no edita).
+
+**Bug real encontrado por `test:schema`:** una nota de puros saltos de
+línea y tabs (`"   \n\t "`) **se aceptaba** y se guardaba como `"\n\t"`:
+`btrim()` de Postgres solo quita espacios, no saltos de línea ni tabs, y
+tanto el RPC como el check de la tabla (de la Feature 1) usaban `btrim`.
+La prueba de la Feature 1 solo probaba espacios. El mismo hueco existía en
+la validación de filas de la Feature 2 (un proveedor o material de puros
+`\n\t` pasaba por el RPC directo). Arreglado en los tres lugares con
+`~ '\S'` (al menos un carácter que no sea espacio en blanco) y un recorte
+real con `regexp_replace`; el check de la tabla se vuelve a crear con
+nombre fijo para que el arreglo llegue también al proyecto real, donde la
+tabla ya existe. Pruebas nuevas para proveedor y material; prueba de
+mutación (volver a `btrim` en los 4 lugares) → 3 FAIL, exactamente esos.
+
+**Una prueba mía estaba mal, no el motor:** esperaba que, tras descartar
+el conflicto de SIM-1190/Alfa, el siguiente cambio se comparara contra
+24.5. Seguía comparando contra 18.2 porque esa misma fila tiene otro
+hallazgo pendiente (posible duplicado de FOL-SIM-0001), y la regla de
+Gonzalo es que una fila se acepta solo si **todos** sus hallazgos están
+descartados. La prueba ahora verifica las dos mitades: con el duplicado
+pendiente la referencia sigue en 18.2; al descartarlo también, 24.5 pasa
+a ser la referencia.
+
+**Pruebas:**
+
+- `npm run test:logica`: **128/128** (14 nuevas): nota vacía, de
+  espacios, de saltos de línea/tabs o ausente → "La nota es obligatoria";
+  1000 caracteres sí, 1001 no; decisión `resuelto` y id no-uuid
+  rechazados; diferencia porcentual (+34.6% del mockup, negativa, 0.0%,
+  anterior 0 → no se calcula); ningún texto de decisión dice verificado
+  ni afirma cumplimiento o reciclaje.
+- `npm run test:schema`: **164/164** (45 nuevas): nota vacía / espacios /
+  saltos de línea / null / 1001 → rechazadas por la base sin crear fila;
+  confirmar → estado y `decided_by`; cambiar de opinión → fila nueva y el
+  estado sigue a la última; repetir decisión → otra fila; otra org, sin
+  org, anon e id inexistente → rechazados; nadie (dueño, misma org, otra
+  org, anon, service role) edita, borra, hace truncate ni inserta directo;
+  el historial no se encoge; insertar desde el SQL Editor también mueve el
+  estado; org equivocado → rechazado; la bandera no queda encendida; de
+  punta a punta con el motor, la regla de "todos descartados".
+- Build limpio, lint sin warnings (un `setState` dentro de un efecto se
+  reemplazó por un `key` que vuelve a montar los campos tras guardar).
+
+**Contra el proyecto real (después de que Gonzalo corrió el SQL):**
+
+- `probar-anon.sh`: `registrar_decision` → 401; las 3 funciones de trigger
+  de decisiones → 404 (no expuestas); anon no edita ni borra decisiones →
+  401; todo lo anterior sigue negado.
+- **Navegador** (`next start` local; Chrome respondió esta vez; las dos
+  cuentas de Google tenían la sesión cerrada, así que Gonzalo inició
+  sesión con gonzalopatlan.builds y el resto lo hice yo):
+  - `/validador/hallazgos`: Pendiente (5), Confirmado (0), Descartado (0),
+    Todos (5), con las 5 tarjetas de la Feature 3.
+  - Revisión de SIM-1190 (conflicto): 18.2 g y 24.5 g, "Diferencia: +34.6%
+    respecto al valor anterior", procedencia de los dos lados (archivo,
+    fila, cuenta y hora). La referencia es la versión de
+    `ejemplo-simulado.csv` de las 2:25 p.m. (la última aceptada).
+  - "Confirmar" con una nota de puros espacios → "La nota es obligatoria…"
+    (el `required` del navegador no detecta espacios; lo rechazó el
+    servidor), sin fila en el historial.
+- **Bug real encontrado en el navegador:** después de ese error, el
+  siguiente "Guardar decisión" **no hacía nada**. Con `<form action>`,
+  React 19 resetea el formulario al terminar cualquier acción, también con
+  error: el radio quedaba desmarcado en el DOM mientras el estado de React
+  lo seguía pintando elegido, y el `required` del radio (invisible,
+  `sr-only`) bloqueaba el envío con un aviso del navegador que no se veía.
+  Quien revisa se quedaba atorado tras cualquier error. Arreglo: envío con
+  `onSubmit` + `startTransition` (sin el reset automático; un error
+  conserva la decisión y la nota) y sin `required` en el radio (si no se
+  elige nada, el servidor responde "Elige confirmar o descartar." en un
+  mensaje visible). Repetido después del arreglo: tras el error, el radio
+  sigue marcado en el DOM y la nota se conserva; cambiar la nota y guardar
+  sin volver a elegir → funciona.
+  - Confirmar con nota → estado Confirmado, historial "1. Confirmó la
+    discrepancia (vigente)" con la nota, la cuenta y la hora; el formulario
+    queda limpio.
+  - Cambio de opinión: "Descartar (error)" con otra nota → estado
+    Descartado, historial con **2** decisiones, la primera intacta y la
+    segunda marcada "(vigente)".
+  - Filtros: Pendiente (4), Confirmado (0), Descartado (1) con la tarjeta de
+    SIM-1190.
+- **Ataques por la API REST con la sesión real** (llave pública + token,
+  sin imprimir ninguno): `registrar_decision` con nota `"\n\t \n"` (el bug
+  de hoy) → 400 "La nota es obligatoria."; con nota `""` → 400; decisión
+  `resuelto` → 400; PATCH, DELETE e INSERT directo en `decisions` → 403;
+  PATCH del estado de un hallazgo pendiente y DELETE de un hallazgo → 403.
+  Después: siguen 2 decisiones, la primera intacta, y los demás hallazgos
+  siguen pendientes.
+
+**Falta:** ancho de celular (pulido de la Feature 5).

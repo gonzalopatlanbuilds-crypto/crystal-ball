@@ -27,7 +27,7 @@ check("/login no redirige al muro de Vercel (Deployment Protection apagado)", !/
 check("/login muestra el aviso de datos simulados", /Datos simulados/.test(texto(htmlLogin)));
 check("/login no filtra llaves secretas", !FUGA.test(htmlLogin));
 
-for (const ruta of ["/validador", "/onboarding"]) {
+for (const ruta of ["/validador", "/validador/hallazgos", "/validador/hallazgos/00000000-0000-0000-0000-000000000000", "/onboarding"]) {
   const res = await pedir(ruta);
   const destino = res.headers.get("location") ?? "";
   check(`${ruta} sin sesión redirige a /login`, res.status >= 300 && res.status < 400 && /\/login$/.test(destino), `(${res.status} → ${destino})`);
