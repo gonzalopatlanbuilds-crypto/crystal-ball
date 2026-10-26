@@ -1,0 +1,4 @@
+sku,supplier,weight_g,material,packaging_revision_date,evidence_folio
+SIM-MT-01,Proveedor Simulado Epsilon,14,PET,2026-09-01,FOL-MT-1
+SIM-MT-02,Proveedor Simulado Epsilon,20,PEAD,2026-09-01,FOL-MT-1
+SIM-MT-03,Proveedor Simulado Epsilon,30,cartón,2026-09-01,FOL-MT-3

@@ -1,5 +1,6 @@
 // Prueba mecánica de la lógica pura (sin base de datos).
 // Uso: npm run test:logica
+import fs from "node:fs";
 import { crearOrgSchema, normalizarJoinCode, unirseOrgSchema } from "../lib/orgs.ts";
 import { COLUMNAS, FILAS_MAX, hoyMexico, leerCsv, leerFecha, leerNumero, TAMANO_MAX_BYTES, validarArchivo } from "../lib/csv.ts";
 import { CSV_EJEMPLO } from "../lib/ejemplo.ts";
@@ -328,6 +329,26 @@ for (const [nombre, texto] of [
   const p = guardia(texto);
   check(`guardia rechaza cifras: ${nombre}`, p.some((x) => /cifra/.test(x)), p);
 }
+// Bug de la prueba mecánica: la guardia solo conocía español en ASCII.
+for (const [nombre, texto, motivo] of [
+  ["veredicto en inglés", "The packaging appears compliant, verified and fully recycled, so it could be approved.", /veredicto/],
+  ["'cumple' partido con espacio de ancho cero", "Podría deberse a un error de captura; el empaque cum​ple con lo declarado.", /invisibles/],
+  ["'verificado' con 'е' cirílica", "Podría deberse a un error de captura; el dato del proveedor está vеrificado.", /otro alfabeto/],
+  ["dígitos arábigo-índicos (٩٠)", "Podría deberse a un error de captura; el empaque tendría ٩٠ unidades por lote.", /dígito que no es 0-9/],
+  ["dígitos de ancho completo (９０, no están en la entrada)", "Podría deberse a un error de captura de ９０ g en la báscula del proveedor.", /cifra que no está/],
+  ["letras separadas 'c u m p l e'", "Podría deberse a un error de captura, aunque el texto dice que c u m p l e con todo.", /disfrazada/],
+  ["palabra con guiones 'veri-fi-cado'", "Podría deberse a un error de captura; el proveedor dice que está veri-fi-cado.", /disfrazada/],
+  ["letras de ancho completo 'ｃｕｍｐｌｅ'", "Podría deberse a un error de captura; el empaque ｃｕｍｐｌｅ con lo declarado.", /veredicto/],
+] as const) {
+  const p = guardia(texto);
+  check(`guardia rechaza disfraz: ${nombre}`, p.some((x) => motivo.test(x)), p);
+}
+check("guardia acepta acentos y ñ del español (no son 'otro alfabeto')", guardia("Podría deberse a un error de captura o a un diseño de empaque más pequeño, quizá de otro año.").length === 0, guardia("Podría deberse a un error de captura o a un diseño de empaque más pequeño, quizá de otro año."));
+// Las 30 observaciones reales que se leyeron a mano (Feature 5) tienen que
+// seguir pasando: la corrección no puede rechazar salidas legítimas.
+const reales = JSON.parse(fs.readFileSync(new URL("../docs/pruebas/lector-ia-2026-10-25.json", import.meta.url), "utf8")) as { resultados: { escenario: string; observacion?: string }[] };
+const rechazadasReales = reales.resultados.filter((x) => x.observacion && revisarObservacion(x.observacion, entradaLector(ESCENARIOS.find((e) => e.id === x.escenario)!.hallazgo)).length > 0);
+check(`las ${reales.resultados.length} observaciones reales de la Feature 5 siguen pasando la guardia corregida`, reales.resultados.length === 30 && rechazadasReales.length === 0, rechazadasReales);
 check("guardia acepta repetir números de la entrada (18.2 y 24.5)", guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas.").length === 0, guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas."));
 check("guardia acepta 'una'/'un' como artículos", guardia("Podría deberse a una revisión del empaque o a un error de captura.").length === 0);
 check("guardia rechaza texto que no es string", guardia(42).length > 0 && guardia(null).length > 0);

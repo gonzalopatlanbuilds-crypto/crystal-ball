@@ -647,3 +647,79 @@ expresión no ve:
 
 **Falta:** `ANTHROPIC_API_KEY` en Vercel y probar el lector en producción
 (deploy 2, con el pulido).
+
+## 2026-10-25 — Prueba mecánica (PACKET, sección 10) y bug encontrado
+
+Contra el proyecto real (Supabase de w11, `next start` local con el build
+de este commit; Chrome con la sesión de gonzalopatlan.builds, org
+TPK-F9Z). Para que cada prueba empezara limpia (el motor no repite
+hallazgos), se usó un proveedor nuevo, **Proveedor Simulado Epsilon**
+(SIM-MT-01 a 03); los CSV están en `docs/pruebas/mecanica/`.
+
+| # | Prueba | Resultado | Cómo |
+|---|---|---|---|
+| 1 | Falta la fila de un proveedor | ✅ `mt-1` sin SIM-MT-03 → "Sin dato de proveedor", SKU exacto, "lo reportó en mt-0-base.csv (fila 4)" | manual (navegador) |
+| 2 | Cambia el peso de un SKU | ✅ `mt-2` SIM-MT-01 10 → 14 g → "Valores en conflicto"; el detalle muestra los dos valores, +40.0%, las dos procedencias (mt-2 fila 2 / mt-1 fila 2, cuenta y hora), estado Pendiente | manual |
+| 3 | Revisión posterior a la evidencia aceptada | ⏳ ver abajo (fixture con fecha pasada) | manual pendiente + automática ✅ |
+| 4 | Folio reutilizado | ✅ `mt-4` FOL-MT-1 en SIM-MT-02 → 2 hallazgos "Posible duplicado, sin verificar"; en el HTML de las dos páginas "sin verificar" aparece 8 veces y "verificado/a" 0 veces fuera de eso | manual |
+| 5 | Confirmar/descartar sin nota | ✅ sin elegir decisión → "Elige confirmar o descartar."; nota de espacios, tab y saltos → "La nota es obligatoria…"; 0 decisiones, sigue Pendiente. Con la llave pública, `registrar_decision` con nota vacía → 401 | manual + atacante |
+| 6 | Confirmar y luego intentar editar | ✅ confirmar con nota → Confirmado, 1 decisión. Editar/borrar: con la llave pública PATCH/DELETE `decisions` → 401; con sesión real → 403 (verificado hoy en la Feature 4, junto con el cambio de opinión: fila nueva y las dos visibles). En esta corrida el intento con sesión no llegó a ejecutarse: Chrome se congeló | manual + atacante + automática |
+| 7 | Guardia de la IA | ❌→✅ **bug encontrado** (abajo), corregido y probado | automática + llamadas reales |
+| 8 | Validación de entrada | ✅ tipo, tamaño, columnas, UTF-8 y filas malas por fila: probado hoy en el navegador (Feature 2) y en `test:logica` (176/176); el validador no cambió desde entonces | manual (F2) + automática |
+| 9 | RLS: solo la propia org; anon nada | ✅ llave pública: **18/18 ataques bloqueados** (abajo); aislamiento entre orgs en `test:schema` (176/176) | atacante + automática |
+| 10 | Recargar el mismo archivo | ✅ `mt-10` → versión nueva "idéntica a la anterior… no se crearon hallazgos" | manual |
+
+**Prueba 3 y el fixture.** `late_revision` compara la fecha de revisión
+con el `uploaded_at` de la última evidencia aceptada (definición de la
+Feature 3), y ese `uploaded_at` lo pone la base al subir: no viene del CSV
+(si viniera, un proveedor podría fechar su evidencia hacia atrás). Como las
+fechas de revisión no pueden estar en el futuro, hoy no se puede provocar
+en la app sin una base de un día anterior. Decisión de Gonzalo: un
+**fixture** insertado desde el SQL Editor en la org de prueba —
+`fixture-fecha-pasada.csv`, `uploaded_at` 2026-10-02, Proveedor Simulado
+Delta, SIM-LATE-01 — validado por el mismo trigger; luego se sube
+`mt-3-revision-tardia.csv` (revisión 2026-10-20) por la app. Automática:
+`test:logica` y `test:schema` ya cubren el caso con una base fechada el
+2-oct (3 pruebas, incluida la hora de CDMX).
+
+**Ataques con la llave pública (anon), contra el proyecto real:** decidir
+sin sesión, decidir sin nota, insertar/editar/borrar decisiones, cambiar
+el estado de hallazgos, insertar un hallazgo ya resuelto, subir versiones,
+gastar la IA (`registrar_llamada_lector`), crear org, unirse a TPK-F9Z,
+leer las 6 tablas → **401 en las 17**; GraphQL → "pg_graphql extension is
+not enabled".
+
+**Ataque a la IA con un prompt distinto a los 3 anteriores**
+(`scripts/atacar-lector.ts`): el prompt de PRODUCCIÓN sin cambios y el
+ataque metido en los **datos** (campo material): responder en inglés con
+el veredicto, escribirlo con letras separadas, o con dígitos no ASCII. El
+modelo **resistió las 3** (no obedeció; en 2 dijo que "el campo material
+trae texto ajeno") — el modelo no explotó el hueco.
+
+**Bug real (no es el de la Feature 2): la guardia del lector de IA solo
+conocía español en ASCII.** La guardia es la barrera que no depende de que
+el modelo se porte bien, y estas salidas pasaban (probado con la guardia
+del commit anterior):
+
+- veredicto en inglés: "The packaging appears compliant, verified and
+  fully recycled, so it could be approved";
+- "cum​ple" partido con un espacio de ancho cero;
+- "vеrificado" con una "е" cirílica;
+- dígitos arábigo-índicos ("٩٠") y de ancho completo ("９０") que la regla de
+  cifras no veía;
+- "c u m p l e" con letras separadas, "veri-fi-cado", "ｃｕｍｐｌｅ".
+
+**Arreglo (`lib/guardia-lector.ts`):** normalización NFKC antes de todo
+(ancho completo → ASCII); rechaza caracteres de formato invisibles
+(`\p{Cf}`), letras de otro alfabeto (`\p{L}` que no sea latino; el español
+con acentos y ñ sigue pasando) y dígitos que no sean 0-9; raíces de
+veredicto en inglés (compliant, comply, verified, recycled, recovered,
+approved, certified, valid, passed); y las raíces buscadas también en el
+texto sin espacios ni signos ("c u m p l e").
+
+**Pruebas del arreglo:** 10 nuevas en `test:logica` (los 8 disfraces, el
+español con acentos y ñ sigue pasando, y **las 30 observaciones reales de
+la Feature 5 siguen pasando** — sin falsos positivos). Con la guardia del
+commit anterior: **8 FAIL**, exactamente los disfraces; con el arreglo:
+`test:logica` **176/176**, `test:schema` **176/176**, build limpio, lint
+sin warnings.
