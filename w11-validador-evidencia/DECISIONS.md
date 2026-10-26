@@ -660,7 +660,7 @@ hallazgos), se usó un proveedor nuevo, **Proveedor Simulado Epsilon**
 |---|---|---|---|
 | 1 | Falta la fila de un proveedor | ✅ `mt-1` sin SIM-MT-03 → "Sin dato de proveedor", SKU exacto, "lo reportó en mt-0-base.csv (fila 4)" | manual (navegador) |
 | 2 | Cambia el peso de un SKU | ✅ `mt-2` SIM-MT-01 10 → 14 g → "Valores en conflicto"; el detalle muestra los dos valores, +40.0%, las dos procedencias (mt-2 fila 2 / mt-1 fila 2, cuenta y hora), estado Pendiente | manual |
-| 3 | Revisión posterior a la evidencia aceptada | ⏳ ver abajo (fixture con fecha pasada) | manual pendiente + automática ✅ |
+| 3 | Revisión posterior a la evidencia aceptada | ✅ con fixture fechado el 2-oct (ver la continuación de abajo) | manual + automática |
 | 4 | Folio reutilizado | ✅ `mt-4` FOL-MT-1 en SIM-MT-02 → 2 hallazgos "Posible duplicado, sin verificar"; en el HTML de las dos páginas "sin verificar" aparece 8 veces y "verificado/a" 0 veces fuera de eso | manual |
 | 5 | Confirmar/descartar sin nota | ✅ sin elegir decisión → "Elige confirmar o descartar."; nota de espacios, tab y saltos → "La nota es obligatoria…"; 0 decisiones, sigue Pendiente. Con la llave pública, `registrar_decision` con nota vacía → 401 | manual + atacante |
 | 6 | Confirmar y luego intentar editar | ✅ confirmar con nota → Confirmado, 1 decisión. Editar/borrar: con la llave pública PATCH/DELETE `decisions` → 401; con sesión real → 403 (verificado hoy en la Feature 4, junto con el cambio de opinión: fila nueva y las dos visibles). En esta corrida el intento con sesión no llegó a ejecutarse: Chrome se congeló | manual + atacante + automática |
@@ -723,3 +723,73 @@ la Feature 5 siguen pasando** — sin falsos positivos). Con la guardia del
 commit anterior: **8 FAIL**, exactamente los disfraces; con el arreglo:
 `test:logica` **176/176**, `test:schema` **176/176**, build limpio, lint
 sin warnings.
+
+## 2026-10-25 — Prueba mecánica, continuación: pruebas 3 y 6 y un segundo bug
+
+**Prueba 3 (revisión tardía) — ✅ en la app real.** El primer `INSERT`
+del fixture no llegó a la base: el historial pasaba de `seq 12` a `seq 13`
+sin hueco (una inserción intentada, aunque fallara, consume un `seq`). Con
+eso el motor se comportó bien: el primer `mt-3` (de gonzalo.patlan5) fue la
+primera evidencia de SIM-LATE-01, sin base contra la cual comparar, y las
+dos recargas siguientes fueron idénticas. Gonzalo volvió a correr el
+`INSERT` con `returning` en el proyecto de w11: `fixture-fecha-pasada.csv`
+quedó en `seq 16` con `uploaded_at` 2026-10-02 10:00 CDMX. **Detalle de
+orden:** el motor recorre el historial por `seq` (orden de inserción), así
+que el fixture, aunque su fecha es vieja, quedó como la evidencia aceptada
+más reciente de SIM-LATE-01; para la prueba es justo lo que se quería, y
+fuera de un fixture una versión siempre se inserta con `uploaded_at =
+now()`, así que `seq` y fecha van en el mismo orden. Subir `mt-3` otra vez
+→ "1 hallazgo nuevo": SIM-LATE-01 · **Revisión posterior a evidencia** ·
+"Evidencia aceptada el 2 oct; empaque revisado el 20 oct", Pendiente; el
+detalle muestra las dos procedencias (`mt-3` fila 2, hoy 6:30 p.m.;
+`fixture-fecha-pasada.csv` fila 2, 2 oct 10:00 a.m.).
+
+**Prueba 6 (editar una decisión) — ✅ con la sesión real** sobre SIM-MT-01
+(confirmado): PATCH de la nota, PATCH confirmed→discarded, DELETE de la
+decisión y PATCH del estado del hallazgo → **403** los cuatro; una
+decisión nueva (descartar, con nota) se agrega; la primera sigue intacta y
+el estado sigue a la última.
+
+**Segundo bug real, encontrado al cerrar la prueba 6: una decisión con
+nota "invisible" se aceptaba.** Una nota de espacio duro + espacio em +
+espacio de ancho cero (`"  ​"`, que en pantalla se ve vacía)
+→ `registrar_decision` respondió **200** y la guardó. Rompe el criterio
+central de la Feature 4 ("requiere una nota no vacía"). Dos capas fallaban:
+
+- **Base:** en Postgres `\S` no trata el espacio duro ni los de ancho cero
+  como espacio, así que el `~ '\S'` (el arreglo del `btrim` de esta
+  mañana) los dejaba pasar; el recorte con `\s` tampoco los quitaba.
+- **Servidor:** `trim()` de JavaScript quita el espacio duro y el em, pero
+  **no** el de ancho cero; `"​"` pasaba `zod` (`/\S/`), así que también
+  entraba por el formulario real. Comprobado: con el código anterior, nota
+  de solo ancho cero, de nbsp+em+ancho cero y de marcas de dirección →
+  aceptadas.
+
+Esa decisión con nota invisible **se queda en el historial** de SIM-MT-01:
+`decisions` es append-only y nadie puede borrarla ni corregirla (justo la
+propiedad que el producto promete). Queda como evidencia del bug.
+
+**Arreglo:** la nota debe tener **al menos una letra o un dígito**
+(latinas con acento y ñ incluidas) después de quitar caracteres
+invisibles:
+
+- `zod` (`lib/decisiones.ts`): quita `\p{Cf}`, recorta y exige
+  `[\p{L}\p{N}]`.
+- Base: `registrar_decision` exige `[0-9A-Za-zÀ-ÖØ-öø-ɏ]`;
+  el trigger recorta también espacios Unicode e invisibles; el check de la
+  tabla se recrea con la misma regla **`not valid`** (aplica a toda fila
+  nueva sin fallar por la fila mala que ya existe y no se puede tocar).
+  Los rangos van escritos como escapes `\uXXXX`, no como caracteres
+  literales, para que nada invisible se pierda al copiar el SQL.
+
+**Pruebas:** `test:logica` **182/182** (6 nuevas: ancho cero, la nota que
+se coló, marcas de dirección, puntuación sin letras, ñ y acentos sí, un
+ancho cero en medio se quita) y `test:schema` **179/179** (3 nuevas). Con
+el código anterior: **10 FAIL** en la base (3 directas y el resto en
+cascada) y **5 FAIL** en el servidor. Build limpio, lint sin warnings.
+Gonzalo corrió el SQL en el proyecto real.
+
+**No verificado todavía contra el proyecto real:** repetir el ataque con
+la nota invisible después de correr el SQL — Chrome se congeló otra vez
+(cuarta vez en la sesión). Se deja una prueba de SQL que no necesita
+navegador (ver el mensaje de entrega).

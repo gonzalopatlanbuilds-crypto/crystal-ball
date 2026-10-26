@@ -29,10 +29,14 @@ export const HISTORIAL_DECISION: Record<Decision, string> = {
 export const decisionSchema = z.object({
   findingId: z.string().uuid("Hallazgo inválido."),
   decision: z.enum(["confirmed", "discarded"], { message: "Elige confirmar o descartar." }),
+  // Sin caracteres de formato invisibles (ancho cero, marcas de dirección)
+  // y con al menos una letra o un dígito: una nota de puros espacios raros o
+  // invisibles se veía vacía y pasaba `trim()` + `\S` (bug de la prueba
+  // mecánica, encontrado con la sesión real contra el proyecto).
   note: z
     .string({ message: "La nota es obligatoria." })
-    .transform((v) => v.trim())
-    .refine((v) => /\S/.test(v), "La nota es obligatoria: escribe por qué confirmas o descartas.")
+    .transform((v) => v.replace(/\p{Cf}/gu, "").trim())
+    .refine((v) => /[\p{L}\p{N}]/u.test(v), "La nota es obligatoria: escribe por qué confirmas o descartas.")
     .refine((v) => v.length <= NOTA_MAX, `La nota tiene más de ${NOTA_MAX} caracteres.`),
 });
 

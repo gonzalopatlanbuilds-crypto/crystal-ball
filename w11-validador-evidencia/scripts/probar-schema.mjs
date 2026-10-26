@@ -408,7 +408,9 @@ const idConflicto = (await db.query(`select id from findings where org_id = $1 a
 const idFaltante = (await db.query(`select id from findings where org_id = $1 and type = 'missing_supplier'`, [orgE])).rows[0].id;
 
 // Nota obligatoria: la base la rechaza aunque alguien se salte el servidor.
-for (const [nombre, nota] of [["vacía", ""], ["solo espacios", "   \n\t "], ["null", null]]) {
+for (const [nombre, nota] of [["vacía", ""], ["solo espacios", "   \n\t "], ["null", null],
+  // Bug de la prueba mecánica: Postgres no trata nbsp ni ancho cero como espacio.
+  ["nbsp + em space + ancho cero", "  ​"], ["solo ancho cero", "​"], ["puntuación sin letras", "...?!"]]) {
   r = await decidir("E", idConflicto, "confirmed", nota);
   check(`decisión con nota ${nombre} → rechazada por la base`, /nota es obligatoria/.test(r.error ?? ""), r);
 }

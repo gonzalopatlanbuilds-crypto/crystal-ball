@@ -609,7 +609,11 @@ grant execute on function public.registrar_version(text, jsonb, jsonb, boolean, 
 -- 1000. Reemplaza el check de la Feature 1, que usaba btrim() y dejaba
 -- pasar una nota de puros saltos de línea o tabs.
 alter table public.decisions drop constraint if exists decisions_note_check;
-alter table public.decisions add constraint decisions_note_check check (note ~ '\S' and char_length(note) <= 1000);
+-- NOT VALID: aplica a toda fila nueva, sin revisar las viejas. Hace
+-- falta porque en el proyecto real ya existe una decisión con nota
+-- invisible (la evidencia del bug de la prueba mecánica) y `decisions`
+-- es append-only: no se puede borrar ni corregir.
+alter table public.decisions add constraint decisions_note_check check (note ~ '[0-9A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F]' and char_length(note) <= 1000) not valid;
 
 -- Antes de insertar: el org_id de la decisión es el del hallazgo (no lo
 -- elige quien inserta) y la nota se guarda sin espacios sobrantes.
@@ -630,7 +634,7 @@ begin
   end if;
   -- btrim() solo quita espacios, no saltos de línea ni tabs (bug real:
   -- una nota "\n\t" pasaba). Se quita todo espacio en blanco.
-  new.note := regexp_replace(new.note, '^\s+|\s+$', '', 'g');
+  new.note := regexp_replace(new.note, '^[\s\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uFEFF]+|[\s\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uFEFF]+$', '', 'g');
   return new;
 end;
 $$;
@@ -711,10 +715,13 @@ begin
     raise exception 'La decisión debe ser confirmar o descartar.' using errcode = 'P0001';
   end if;
   -- `\S`: al menos un carácter que no sea espacio, salto de línea o tab.
-  if p_note is null or p_note !~ '\S' then
+  -- Al menos una letra o un dígito: una nota de puros espacios raros o
+  -- caracteres invisibles (nbsp, ancho cero) se veía vacía y se aceptaba
+  -- (bug de la prueba mecánica).
+  if p_note is null or p_note !~ '[0-9A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F]' then
     raise exception 'La nota es obligatoria.' using errcode = 'P0001';
   end if;
-  if char_length(regexp_replace(p_note, '^\s+|\s+$', '', 'g')) > 1000 then
+  if char_length(regexp_replace(p_note, '^[\s\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uFEFF]+|[\s\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uFEFF]+$', '', 'g')) > 1000 then
     raise exception 'La nota tiene más de 1000 caracteres.' using errcode = 'P0001';
   end if;
   -- Bloquea el hallazgo: dos decisiones simultáneas quedan en orden.

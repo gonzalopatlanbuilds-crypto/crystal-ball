@@ -274,6 +274,18 @@ for (const [nombre, nota] of [["vacía", ""], ["solo espacios", "    "], ["solo 
   const r = dec({ note: nota });
   check(`decisión con nota ${nombre} → rechazada con "La nota es obligatoria"`, !r.success && /nota es obligatoria/i.test(r.error.issues[0].message), r);
 }
+// Bug de la prueba mecánica: notas invisibles pasaban trim() + \S.
+for (const [nombre, nota] of [
+  ["solo espacio de ancho cero", "​"],
+  ["nbsp + em space + ancho cero (la que se coló en el proyecto real)", "  ​"],
+  ["marcas de dirección", "‎‏"],
+  ["puntuación sin letras", " ... — ¿? "],
+] as const) {
+  const r = dec({ note: nota });
+  check(`decisión con nota invisible/sin contenido (${nombre}) → rechazada`, !r.success && /nota es obligatoria/i.test(r.error.issues[0].message), r);
+}
+check("nota con ñ y acentos → válida", dec({ note: "Señal de diseño nuevo." }).success);
+check("nota con un ancho cero en medio → se guarda sin él", dec({ note: "Er​ror de captura" }).data?.note === "Error de captura");
 check(`nota de ${NOTA_MAX} caracteres → válida`, dec({ note: "x".repeat(NOTA_MAX) }).success);
 check(`nota de ${NOTA_MAX + 1} caracteres → rechazada`, !dec({ note: "x".repeat(NOTA_MAX + 1) }).success);
 check("decisión 'resuelto' → rechazada", !dec({ decision: "resuelto" }).success);
