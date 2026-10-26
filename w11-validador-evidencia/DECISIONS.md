@@ -833,3 +833,36 @@ estados vacíos, revisar el aviso en todas las pantallas) y
   sin warnings.
 - `ANTHROPIC_API_KEY`: Gonzalo la agregó en Vercel; el deploy de este
   commit (deploy 2) es el primero que la toma de principio a fin.
+
+## 2026-10-25 — Deploy 2 verificado
+
+- Push de `856e576` (commit 6): Vercel en **success** para ese commit
+  (estado de GitHub). Producción sirve este build: el título de pestaña
+  "Cargar evidencia · Validador de Evidencia" solo existe desde el commit 6.
+- `npm run verificar:deploy -- https://w11-validador-evidencia.vercel.app`:
+  **9/9** (`/login` 200 sin sesión, sin muro de Vercel, con aviso y sin
+  llaves; `/validador`, `/validador/hallazgos`, un detalle y
+  `/onboarding` → `/login`; ruta inexistente sin 500).
+- **Lector de IA en producción, con sesión real** (gonzalopatlan.builds),
+  sobre SIM-LATE-01 (revisión tardía): «La fecha 2026-10-20 podría deberse
+  a un cambio de arte o de etiqueta sin efecto en peso ni material, pues
+  ambos registros coinciden. Quizá también se trate de un error de captura
+  de fecha o de un folio FOL-SIM-LATE-1 copiado de la carga anterior.»
+  Leída a mano: condicional, sin veredicto, sin elegir valor, cifras y
+  folio de la entrada. El hallazgo siguió Pendiente con 0 decisiones.
+  `ANTHROPIC_API_KEY` se lee en el servidor al momento de la llamada (no
+  se incrusta en el build).
+- **`/login` a 375 y 320 px, sin sesión:** la extensión de Chrome no puede
+  abrir incógnito. Un primer intento (HTML de producción pedido sin cookies
+  y puesto en un iframe con `srcdoc`) **no sirvió**: el navegador no cargó
+  la página ("This page couldn't load") y la medición salió de una página
+  de error; se descartó. Medición válida: en el servidor local (mismo
+  código que `856e576`) se cerró la sesión local (`/auth/signout`, 303;
+  la de producción no se tocó) y se midió `/login` real en iframes de 375 y
+  320 px: **0 desbordes**, botón de Google 273×40 y 218×40 px con su color,
+  aviso visible; captura revisada.
+- **`/onboarding` no medido:** sin sesión (también en incógnito) siempre
+  redirige a `/login` por diseño; solo se dibuja para alguien con sesión y
+  sin organización, y las dos cuentas de prueba ya tienen org. Su tarjeta
+  usa el mismo patrón que `/login` (`max-w-md w-full`, `p-4`, formularios a
+  todo el ancho).
