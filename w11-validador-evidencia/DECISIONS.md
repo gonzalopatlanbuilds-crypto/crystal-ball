@@ -789,7 +789,15 @@ el código anterior: **10 FAIL** en la base (3 directas y el resto en
 cascada) y **5 FAIL** en el servidor. Build limpio, lint sin warnings.
 Gonzalo corrió el SQL en el proyecto real.
 
-**No verificado todavía contra el proyecto real:** repetir el ataque con
-la nota invisible después de correr el SQL — Chrome se congeló otra vez
-(cuarta vez en la sesión). Se deja una prueba de SQL que no necesita
-navegador (ver el mensaje de entrega).
+**Verificado contra el proyecto real (después de correr el SQL):** Chrome
+se congeló otra vez (cuarta vez en la sesión), así que Gonzalo corrió en
+el SQL Editor una inserción directa de una decisión con la misma nota
+invisible (`E'  ​'`) sobre SIM-MT-01, dentro de
+`begin … rollback`: la base la rechazó con `decisions_note_check`. El
+arreglo está aplicado en el proyecto real y bloquea ese camino aunque no
+se pase por `registrar_decision`. Deploy de `fcdc2df`: Vercel en
+"success" y `verificar:deploy` 9/9.
+
+**Primer paso de la próxima sesión:** commit 6 (pulido: ancho de celular,
+estados vacíos, revisar el aviso en todas las pantallas) y
+`ANTHROPIC_API_KEY` en Vercel para el lector de IA en producción.
