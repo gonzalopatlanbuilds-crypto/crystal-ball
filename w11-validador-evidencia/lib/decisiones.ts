@@ -16,8 +16,14 @@ export const ETIQUETA_DECISION: Record<Decision, string> = {
 
 export const SIGNIFICADO_DECISION: Record<Decision, string> = {
   confirmed: "La discrepancia es real: el valor nuevo NO pasa a ser la referencia.",
-  discarded: "No es un problema: si todos los hallazgos de esa fila se descartan, el valor nuevo pasa a ser la referencia.",
+  discarded: "Descartar no cambia ningún dato: solo registra que esta discrepancia no aplica.",
 };
+
+// Lo que pasa APARTE de la decisión, como consecuencia del propio dato
+// (regla de la Feature 3). Va separado de SIGNIFICADO_DECISION para que no
+// se lea como algo que el revisor "activa" al descartar.
+export const CONSECUENCIA_DESCARTE =
+  "Aparte, y de forma automática: cuando todos los hallazgos de esa fila (este SKU con este proveedor, en esta carga) quedan descartados, sus valores se vuelven la evidencia aceptada contra la que se comparan las cargas siguientes. No lo activa esta decisión por sí sola: depende de que ninguno de esos hallazgos siga pendiente o confirmado.";
 
 export const HISTORIAL_DECISION: Record<Decision, string> = {
   confirmed: "Confirmó la discrepancia",

@@ -866,3 +866,36 @@ estados vacíos, revisar el aviso en todas las pantallas) y
   sin organización, y las dos cuentas de prueba ya tienen org. Su tarjeta
   usa el mismo patrón que `/login` (`max-w-md w-full`, `p-4`, formularios a
   todo el ancho).
+
+## 2026-10-25 — Texto de "Descartar" separado en dos frases
+
+**Qué cambió (solo texto, sin cambio de comportamiento):** en el detalle
+de un hallazgo, al elegir "Descartar (error)" se leía "No es un problema:
+si todos los hallazgos de esa fila se descartan, el valor nuevo pasa a ser
+la referencia", que mezclaba lo que hace la decisión con una consecuencia
+del sistema y sonaba a advertencia ambigua (pedido de Gonzalo). Ahora son
+dos frases:
+
+1. Lo que hace la decisión (`SIGNIFICADO_DECISION.discarded`): "Descartar
+   no cambia ningún dato: solo registra que esta discrepancia no aplica."
+2. Lo que pasa aparte, en su propio renglón (`CONSECUENCIA_DESCARTE`):
+   "Aparte, y de forma automática: cuando todos los hallazgos de esa fila
+   (este SKU con este proveedor, en esta carga) quedan descartados, sus
+   valores se vuelven la evidencia aceptada contra la que se comparan las
+   cargas siguientes. No lo activa esta decisión por sí sola: depende de
+   que ninguno de esos hallazgos siga pendiente o confirmado."
+
+**Precisión respecto al pedido:** la consecuencia no es por SKU sino por
+**fila** (SKU + proveedor, en esa carga), que es como funciona el motor
+(Feature 3); el texto lo dice así para no prometer algo distinto a lo que
+hace. "Confirmar" no cambió.
+
+**Pruebas:** no había ninguna que comprobara ese texto literal; sí una que
+pasa todos los textos de decisión por el filtro de palabras de veredicto,
+y ahora incluye la frase nueva. Se agregaron 3: la decisión dice que no
+cambia ningún dato y no menciona la referencia; la consecuencia dice
+"automática", exige "todos los hallazgos de esa fila" y "No lo activa esta
+decisión"; y nombra la fila completa. `test:logica` **187/187**,
+`test:schema` **179/179**, build limpio, lint sin warnings. **No revisado en
+el navegador** (la sesión local quedó cerrada tras medir `/login`); el
+cambio es un renglón condicional en `FormularioDecision`.

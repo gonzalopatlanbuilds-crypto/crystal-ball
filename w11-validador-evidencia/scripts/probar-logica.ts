@@ -19,7 +19,7 @@ import { entradaLector, ENTRADA_MAX, type HallazgoParaIA } from "../lib/lector-i
 import { numerosEnTexto, revisarObservacion } from "../lib/guardia-lector.ts";
 import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
 import { ESCENARIOS } from "./escenarios-lector.ts";
-import { decisionSchema, diferenciaPorcentual, notaVisible, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
+import { CONSECUENCIA_DESCARTE, decisionSchema, diferenciaPorcentual, notaVisible, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
 
 let ok = 0;
 let fail = 0;
@@ -296,8 +296,13 @@ check("diferencia 18.2 → 24.5 = +34.6% (como el mockup)", diferenciaPorcentual
 check("diferencia 55 → 50 = -9.1%", diferenciaPorcentual(55, 50) === "-9.1%", diferenciaPorcentual(55, 50));
 check("diferencia sin cambio = 0.0%", diferenciaPorcentual(10, 10) === "0.0%", diferenciaPorcentual(10, 10));
 check("diferencia con anterior 0 → no se calcula (null)", diferenciaPorcentual(0, 5) === null);
-const textosDecision = [...Object.values(ETIQUETA_DECISION), ...Object.values(SIGNIFICADO_DECISION), ...Object.values(HISTORIAL_DECISION)];
+const textosDecision = [...Object.values(ETIQUETA_DECISION), ...Object.values(SIGNIFICADO_DECISION), ...Object.values(HISTORIAL_DECISION), CONSECUENCIA_DESCARTE];
 check("textos de decisión: ninguno dice verificado ni afirma cumplimiento/reciclaje", textosDecision.every((t) => !/verificad|cumple|recicl|recupera|aprobad/i.test(t)), textosDecision);
+// "Descartar" y su consecuencia van separados: la decisión no cambia datos;
+// la evidencia aceptada cambia sola, por el estado de todos los hallazgos.
+check("descartar: dice que no cambia ningún dato y no habla de la referencia", /no cambia ningún dato/.test(SIGNIFICADO_DECISION.discarded) && !/referencia|evidencia aceptada/.test(SIGNIFICADO_DECISION.discarded), SIGNIFICADO_DECISION.discarded);
+check("consecuencia: es automática, exige TODOS los hallazgos de la fila y no la activa esta decisión", /automática/.test(CONSECUENCIA_DESCARTE) && /todos los hallazgos de esa fila/.test(CONSECUENCIA_DESCARTE) && /No lo activa esta decisión/.test(CONSECUENCIA_DESCARTE), CONSECUENCIA_DESCARTE);
+check("consecuencia: nombra la fila completa (SKU + proveedor + carga), no solo el SKU", /este SKU con este proveedor, en esta carga/.test(CONSECUENCIA_DESCARTE), CONSECUENCIA_DESCARTE);
 
 // ---------- Feature 5: guardia del lector de IA ----------
 const entradaEj = entradaLector(conflicto as unknown as HallazgoParaIA);

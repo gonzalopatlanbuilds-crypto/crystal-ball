@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useState } from "react";
 import { guardarDecision, type DecisionState } from "@/app/validador/hallazgos/actions";
-import { ETIQUETA_DECISION, NOTA_MAX, SIGNIFICADO_DECISION, type Decision } from "@/lib/decisiones";
+import { CONSECUENCIA_DESCARTE, ETIQUETA_DECISION, NOTA_MAX, SIGNIFICADO_DECISION, type Decision } from "@/lib/decisiones";
 
 // Confirmar o descartar con nota obligatoria. El servidor y la base vuelven
 // a exigir la nota: `required` aquí es solo comodidad.
@@ -66,6 +66,7 @@ function Campos({ guardando }: { guardando: boolean }) {
         </div>
       </fieldset>
       {decision && <p className="mt-2 text-xs text-zinc-600">{SIGNIFICADO_DECISION[decision]}</p>}
+      {decision === "discarded" && <p className="mt-1 text-xs text-zinc-500">{CONSECUENCIA_DESCARTE}</p>}
       <label htmlFor="note" className="mt-4 block text-sm font-semibold text-zinc-900">
         Nota (obligatoria)
       </label>
