@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import FormularioCarga from "@/components/FormularioCarga";
 import TablaRechazadas from "@/components/TablaRechazadas";
@@ -15,6 +16,8 @@ interface Version {
   is_example: boolean;
   identical_to_previous: boolean;
 }
+
+export const metadata: Metadata = { title: "Cargar evidencia · Validador de Evidencia" };
 
 export default async function ValidadorPage() {
   const supabase = await createClient();

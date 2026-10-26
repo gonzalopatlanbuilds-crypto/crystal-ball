@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ListaHallazgos, { type HallazgoFila } from "@/components/ListaHallazgos";
@@ -10,6 +11,8 @@ const FILTROS: { valor: EstadoHallazgo | "todos"; etiqueta: string }[] = [
   { valor: "todos", etiqueta: "Todos" },
 ];
 const LIMITE = 200;
+
+export const metadata: Metadata = { title: "Hallazgos · Validador de Evidencia" };
 
 export default async function HallazgosPage({ searchParams }: PageProps<"/validador/hallazgos">) {
   const { estado: crudo } = await searchParams;

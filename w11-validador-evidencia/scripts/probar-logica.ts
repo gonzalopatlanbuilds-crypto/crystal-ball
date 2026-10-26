@@ -19,7 +19,7 @@ import { entradaLector, ENTRADA_MAX, type HallazgoParaIA } from "../lib/lector-i
 import { numerosEnTexto, revisarObservacion } from "../lib/guardia-lector.ts";
 import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
 import { ESCENARIOS } from "./escenarios-lector.ts";
-import { decisionSchema, diferenciaPorcentual, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
+import { decisionSchema, diferenciaPorcentual, notaVisible, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
 
 let ok = 0;
 let fail = 0;
@@ -284,6 +284,8 @@ for (const [nombre, nota] of [
   const r = dec({ note: nota });
   check(`decisión con nota invisible/sin contenido (${nombre}) → rechazada`, !r.success && /nota es obligatoria/i.test(r.error.issues[0].message), r);
 }
+check("notaVisible: la nota invisible que quedó en el proyecto real se marca (false)", notaVisible("  ​") === false);
+check("notaVisible: una nota normal se muestra (true)", notaVisible("Señal de rediseño.") === true);
 check("nota con ñ y acentos → válida", dec({ note: "Señal de diseño nuevo." }).success);
 check("nota con un ancho cero en medio → se guarda sin él", dec({ note: "Er​ror de captura" }).data?.note === "Error de captura");
 check(`nota de ${NOTA_MAX} caracteres → válida`, dec({ note: "x".repeat(NOTA_MAX) }).success);

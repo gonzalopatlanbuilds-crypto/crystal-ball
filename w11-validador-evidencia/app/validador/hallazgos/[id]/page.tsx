@@ -1,10 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import FormularioDecision from "@/components/FormularioDecision";
 import CajaObservacionIA from "@/components/CajaObservacionIA";
 import { fechaHora } from "@/lib/formato";
-import { diferenciaPorcentual, HISTORIAL_DECISION, type Decision } from "@/lib/decisiones";
+import { diferenciaPorcentual, HISTORIAL_DECISION, notaVisible, type Decision } from "@/lib/decisiones";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, type EstadoHallazgo, type TipoHallazgo } from "@/lib/validador";
 
 interface Hallazgo {
@@ -37,6 +38,8 @@ interface DecisionFila {
   decided_by: string;
   decided_at: string;
 }
+
+export const metadata: Metadata = { title: "Revisión de hallazgo · Validador de Evidencia" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fechaCorta = (iso: string) =>
@@ -197,7 +200,13 @@ export default async function HallazgoPage({ params }: PageProps<"/validador/hal
                   {i + 1}. {HISTORIAL_DECISION[x.decision]}
                   {i === decisiones.length - 1 && <span className="ml-2 text-xs font-normal text-zinc-500">(vigente)</span>}
                 </p>
-                <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{x.note}</p>
+                {notaVisible(x.note) ? (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{x.note}</p>
+                ) : (
+                  // Solo puede pasar con decisiones anteriores al arreglo de la
+                  // prueba mecánica: la tabla es append-only y no se borran.
+                  <p className="mt-1 italic text-zinc-500">(nota sin texto visible, registrada antes de que se exigiera una nota con letras o números)</p>
+                )}
                 <p className="mt-1 text-xs text-zinc-500">
                   {correo(x.decided_by)} · {fechaHora(x.decided_at)}
                 </p>

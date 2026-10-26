@@ -25,6 +25,8 @@ export default function CajaObservacionIA({ findingId }: { findingId: string }) 
         )}
         <p className="mt-2 text-xs text-sky-900">
           No decide cuál valor es correcto, no resuelve el hallazgo y puede equivocarse. La decisión es tuya.
+          {" "}En una prueba con causas sembradas nombró la causa en 9 de 10 casos, pero suele listar varias
+          posibilidades y a veces omite la que importa: úsala como pista, no como filtro.
         </p>
         <button
           type="button"

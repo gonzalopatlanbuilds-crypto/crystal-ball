@@ -801,3 +801,35 @@ se pase por `registrar_decision`. Deploy de `fcdc2df`: Vercel en
 **Primer paso de la próxima sesión:** commit 6 (pulido: ancho de celular,
 estados vacíos, revisar el aviso en todas las pantallas) y
 `ANTHROPIC_API_KEY` en Vercel para el lector de IA en producción.
+
+## 2026-10-25 — Commit 6: pulido y documentación (deploy 2)
+
+- **Ancho de celular, medido y no a ojo:** cada pantalla con sesión
+  (`/validador`, la lista de hallazgos con 10 hallazgos, el detalle de un
+  conflicto, el de SIM-6018 y el 404) dentro de un iframe de 375 px y de
+  320 px, midiendo `scrollWidth` contra el ancho visible y buscando
+  cualquier elemento que se salga: **0 desbordes en las 10 mediciones**.
+  Además, captura de las tres pantallas principales a 375 px lado a lado:
+  encabezado, aviso, zona de carga, botones a todo el ancho, filtros en
+  dos renglones, tarjetas y procedencia legibles. (Redimensionar la
+  ventana de Chrome no sirvió: seguía maximizada a 1895 px; por eso el
+  iframe.) No medido: `/login` y `/onboarding` con sesión abierta
+  redirigen; su tarjeta es `max-w-sm w-full` con `p-4`, igual que en w10.
+- **Historial:** una nota sin letras ni números (solo puede existir de
+  antes del arreglo de la prueba mecánica; la tabla es append-only) se
+  muestra como "(nota sin texto visible, registrada antes de que se
+  exigiera una nota con letras o números)" en vez de un hueco. Verificado
+  con la decisión real de SIM-MT-01.
+- **Lector de IA:** la caja dice en una línea lo que mostró la
+  comparación: "En una prueba con causas sembradas nombró la causa en 9 de
+  10 casos, pero suele listar varias posibilidades y a veces omite la que
+  importa: úsala como pista, no como filtro."
+- Estado de carga ("Cargando…") en todo `/validador`, título propio en
+  cada pantalla (pestaña del navegador) y README con producción,
+  variables, qué hace y todos los scripts.
+- El aviso de datos simulados ya está en todas las pantallas: login,
+  onboarding, error, 404 y todo `/validador` (layout).
+- `test:logica` **184/184**, `test:schema` **179/179**, build limpio, lint
+  sin warnings.
+- `ANTHROPIC_API_KEY`: Gonzalo la agregó en Vercel; el deploy de este
+  commit (deploy 2) es el primero que la toma de principio a fin.

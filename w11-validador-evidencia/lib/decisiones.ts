@@ -40,6 +40,13 @@ export const decisionSchema = z.object({
     .refine((v) => v.length <= NOTA_MAX, `La nota tiene más de ${NOTA_MAX} caracteres.`),
 });
 
+// ¿La nota tiene algo que leer? Las decisiones guardadas antes del arreglo
+// de la prueba mecánica pueden tener notas invisibles (la tabla es
+// append-only): la página las marca en vez de mostrar un hueco.
+export function notaVisible(nota: string): boolean {
+  return /[\p{L}\p{N}]/u.test(nota.replace(/\p{Cf}/gu, ""));
+}
+
 // Diferencia del valor nuevo respecto al anterior, con signo y un decimal
 // ("+34.6%"). La calcula el código, nunca la IA. null si no se puede
 // calcular (anterior 0).
