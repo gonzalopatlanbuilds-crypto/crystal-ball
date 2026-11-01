@@ -584,5 +584,22 @@ completo (con "Versiones guardadas" y sin error). En una pestaña nueva la
 página cargó normal: era la pestaña (la máquina tiene poca RAM libre, como
 en w11), no la app.
 
-**Mañana, primer paso / pendientes:** `/onboarding` a 375/320 px (necesita
-una cuenta con sesión y sin organización) y el video de demostración.
+## 2026-11-01 — `/onboarding` en móvil, con una tercera cuenta
+
+Gonzalo eligió una tercera cuenta de Google (ni gonzalo.patlan5 ni
+gonzalopatlan.builds) en producción: entró a `/onboarding` sin
+organización, con el aviso y la cláusula de sombra. Medido con iframes del
+mismo origen:
+
+- 375 px: ancho del documento 375 = ancho visible → no desborda; campos y
+  botones de 293 px.
+- 320 px: 320 = 320 → no desborda; campos y botones de 238 px.
+- 320 px con error: unirse con `ZZZ-999` → «Código no encontrado. Verifica
+  que esté bien escrito.», sigue sin desbordar y sigue en `/onboarding`
+  (la base rechazó el código; no se creó ni cambió nada).
+
+No se creó ninguna organización con esa cuenta y se cerró su sesión al
+terminar. Con esto, todas las pantallas de la app quedan medidas a 375 y
+320 px.
+
+**Pendiente:** el video de demostración.
