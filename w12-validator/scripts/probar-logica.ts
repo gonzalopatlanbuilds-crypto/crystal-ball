@@ -8,6 +8,8 @@ import { entradaLector, ENTRADA_MAX, type HallazgoParaIA } from "../lib/lector-i
 import { numerosEnTexto, revisarObservacion } from "../lib/guardia-lector.ts";
 import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
 import { ESCENARIOS } from "./escenarios-lector.ts";
+import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
+import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
   describirHallazgo,
@@ -374,6 +376,18 @@ check("guardia acepta acentos y ñ del español (no son 'otro alfabeto')", guard
 const reales = JSON.parse(fs.readFileSync(new URL("../docs/pruebas/lector-ia-2026-11-01.json", import.meta.url), "utf8")) as { resultados: { escenario: string; observacion?: string }[] };
 const rechazadasReales = reales.resultados.filter((x) => x.observacion && revisarObservacion(x.observacion, entradaLector(ESCENARIOS.find((e) => e.id === x.escenario)!.hallazgo)).length > 0);
 check(`las ${reales.resultados.length} observaciones reales de la Feature 5 siguen pasando la guardia corregida`, reales.resultados.length === 30 && rechazadasReales.length === 0, rechazadasReales);
+// Los casos plantados propios de w12 (corrida real del 2026-11-01): también
+// pasan la guardia, y el texto de la caja de IA dice el resultado medido en
+// ESE archivo, no un número de otra semana.
+const realesW12 = JSON.parse(fs.readFileSync(new URL("../docs/pruebas/lector-ia-2026-11-01-w12.json", import.meta.url), "utf8")) as { conjunto: string; rondas: number; resultados: { escenario: string; estado: string; observacion?: string; nombra_causa?: boolean }[] };
+const rechazadasW12 = realesW12.resultados.filter((x) => x.observacion && revisarObservacion(x.observacion, entradaLector(ESCENARIOS_W12.find((e) => e.id === x.escenario)!.hallazgo)).length > 0);
+check(`las ${realesW12.resultados.length} observaciones reales de los casos de w12 pasan la guardia`, realesW12.conjunto === "w12" && realesW12.resultados.length === 30 && rechazadasW12.length === 0, rechazadasW12);
+const mayoriaW12 = ESCENARIOS_W12.filter((e) => {
+  const ok = realesW12.resultados.filter((x) => x.escenario === e.id && x.estado === "ok" && x.nombra_causa).length;
+  return ok * 2 > realesW12.rondas;
+}).length;
+check(`el texto de la caja de IA dice el resultado medido en w12 (${mayoriaW12} de ${ESCENARIOS_W12.length})`, RESULTADO_COMPARACION.includes(`${mayoriaW12} de ${ESCENARIOS_W12.length}`) && /w12|esta semana/.test(RESULTADO_COMPARACION), RESULTADO_COMPARACION);
+check("la regla marca 3 de los 10 casos de w12 (los que cambian el peso más de 20%)", ESCENARIOS_W12.filter((e) => chequeoPorReglas(e.hallazgo).marcado).map((e) => e.id).join() === "decimal,unidades,captura_peso");
 check("guardia acepta repetir números de la entrada (18.2 y 24.5)", guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas.").length === 0, guardia("Ambos pesos, 18.2 g y 24.5 g, podrían venir de básculas distintas."));
 check("guardia acepta 'una'/'un' como artículos", guardia("Podría deberse a una revisión del empaque o a un error de captura.").length === 0);
 check("guardia rechaza texto que no es string", guardia(42).length > 0 && guardia(null).length > 0);

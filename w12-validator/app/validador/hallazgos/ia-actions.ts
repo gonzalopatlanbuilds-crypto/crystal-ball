@@ -2,9 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { observarHallazgo, type HallazgoParaIA } from "@/lib/lector-ia";
+import { MODELO_LECTOR, observarHallazgo, type HallazgoParaIA } from "@/lib/lector-ia";
 
-export type ObservacionState = undefined | { observacion: string } | { error: string };
+// `respaldo`: el modelo que respondió cuando NO fue el principal (el
+// respaldo del servidor entra si el principal se niega); null si respondió
+// el principal.
+export type ObservacionState = undefined | { observacion: string; respaldo: string | null } | { error: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,7 +48,7 @@ export async function pedirObservacionIA(findingId: string): Promise<Observacion
   }
 
   const r = await observarHallazgo(h);
-  if (r.estado === "ok") return { observacion: r.observacion };
+  if (r.estado === "ok") return { observacion: r.observacion, respaldo: r.modelo === MODELO_LECTOR ? null : r.modelo };
   if (r.estado === "descartado") {
     console.error("lector IA: salida descartada por la guardia", r.problemas);
     return { error: "La IA respondió con algo que no pasa la revisión (veredictos o cifras nuevas). No se muestra nada." };

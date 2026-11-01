@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { pedirObservacionIA, type ObservacionState } from "@/app/validador/hallazgos/ia-actions";
+import { MODELO_LECTOR, RESULTADO_COMPARACION } from "@/lib/modelo-ia";
 
 // "Observación de IA (sin validar)": la etiqueta y la aclaración las pone
 // la página, nunca el modelo. Se pide con un botón (cada consulta cuesta) y
@@ -15,18 +16,28 @@ export default function CajaObservacionIA({ findingId }: { findingId: string }) 
       <h2 className="text-base font-semibold text-zinc-900">Observación de IA (sin validar)</h2>
       <div className="mt-2 rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm text-zinc-800" aria-live="polite">
         {estado && "observacion" in estado ? (
-          <p>
-            <span className="font-semibold">[!]</span> {estado.observacion}
-          </p>
+          <>
+            <p>
+              <span className="font-semibold">[!]</span> {estado.observacion}
+            </p>
+            {estado.respaldo && (
+              <p className="mt-1 text-xs font-medium text-amber-900">
+                Esta observación la escribió un modelo de respaldo ({estado.respaldo}), no el modelo principal.
+              </p>
+            )}
+          </>
         ) : estado && "error" in estado ? (
           <p className="text-red-700">{estado.error}</p>
         ) : (
           <p className="text-zinc-600">Una IA puede sugerir qué podría explicar esta discrepancia. Es opcional.</p>
         )}
         <p className="mt-2 text-xs text-sky-900">
+          Modelo principal: {MODELO_LECTOR}. Si se niega a responder, la observación puede venir de un modelo de
+          respaldo distinto; en ese caso se indica arriba.
+        </p>
+        <p className="mt-2 text-xs text-sky-900">
           No decide cuál valor es correcto, no resuelve el hallazgo y puede equivocarse. La decisión es tuya.
-          {" "}En una prueba con causas sembradas nombró la causa en 9 de 10 casos, pero suele listar varias
-          posibilidades y a veces omite la que importa: úsala como pista, no como filtro.
+          {" "}{RESULTADO_COMPARACION}
         </p>
         <button
           type="button"

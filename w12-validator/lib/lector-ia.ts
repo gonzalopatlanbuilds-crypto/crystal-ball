@@ -13,7 +13,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { ETIQUETA_TIPO, type TipoHallazgo } from "./validador.ts";
 import { OBSERVACION_LARGO_MAX, revisarObservacion } from "./guardia-lector.ts";
 
-export const MODELO_LECTOR = "claude-opus-5-5";
+import { MODELO_LECTOR } from "./modelo-ia.ts";
+
+export { MODELO_LECTOR };
 const INTENTOS = 2;
 // Tope de la entrada: un hallazgo real pesa menos de 2 KB. Si algo la
 // infla, no se manda a la API.
@@ -101,7 +103,10 @@ export function entradaLector(h: HallazgoParaIA): string {
 }
 
 export type ResultadoLector =
-  | { estado: "ok"; observacion: string; intentos: number; rechazos: string[][] }
+  // `modelo`: el que de verdad respondió. Con el respaldo del servidor
+  // (fallbacks), si el modelo principal se niega, la respuesta puede venir
+  // de otro modelo; la página lo dice.
+  | { estado: "ok"; observacion: string; intentos: number; rechazos: string[][]; modelo: string }
   | { estado: "descartado"; problemas: string[][]; salidas: unknown[] }
   | { estado: "error"; motivo: string };
 
@@ -158,7 +163,7 @@ export async function observarHallazgo(h: HallazgoParaIA, client?: Anthropic): P
     salidas.push(observacion);
     const p = revisarObservacion(observacion, entrada);
     if (p.length === 0) {
-      return { estado: "ok", observacion: (observacion as string).trim(), intentos: i, rechazos: problemas };
+      return { estado: "ok", observacion: (observacion as string).trim(), intentos: i, rechazos: problemas, modelo: respuesta.model };
     }
     problemas.push(p);
   }

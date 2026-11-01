@@ -7,7 +7,7 @@ Written before the rebuild starts, aligned with docs/CHARTER.md, docs/PERSONAS.m
 
 ## 1. Problem in my words
 
-A small or mid-size Mexican producer under the new Circular Economy Law has to reconcile packaging evidence from a handful of suppliers before every compliance cycle. Today that means emails and WhatsApp, compared by eye, with no record of what changed or why. An enterprise tool (Specright-class) exists but costs around US$60,000/year - out of reach for a company like mine. Validator makes that evidence traceable enough for a human to decide, without ever claiming the company complies.
+A small or mid-size Mexican producer under the new Circular Economy Law has to reconcile packaging evidence from a handful of suppliers before every compliance cycle. Today that means emails and WhatsApp, compared by eye, with no record of what changed or why. An enterprise tool (Specright-class) exists, priced by quote (no public price; see §6, unverified) - out of reach for a company like mine. Validator makes that evidence traceable enough for a human to decide, without ever claiming the company complies.
 
 ## 2. Exact user
 

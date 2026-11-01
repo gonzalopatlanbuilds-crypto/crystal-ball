@@ -12,7 +12,7 @@ export interface Escenario {
   hallazgo: HallazgoParaIA;
 }
 
-const fila = (peso: number, material: string, fecha: string, folio: string, archivo = "proveedor_simulado.csv", n = 2) => ({
+export const fila = (peso: number, material: string, fecha: string, folio: string, archivo = "proveedor_simulado.csv", n = 2) => ({
   version_id: "00000000-0000-0000-0000-00000000000a",
   archivo,
   fila: n,
@@ -23,14 +23,16 @@ const fila = (peso: number, material: string, fecha: string, folio: string, arch
   packaging_revision_date: fecha,
   evidence_folio: folio,
 });
-const nueva = (peso: number, material: string, fecha: string, folio: string) => ({ archivo: "proveedor_octubre.csv", fila: 5, weight_g: peso, material, packaging_revision_date: fecha, evidence_folio: folio });
-const conflicto = (sku: string, prov: string, antes: [number, string, string, string], despues: [number, string, string, string]): HallazgoParaIA => {
+export const nueva = (peso: number, material: string, fecha: string, folio: string) => ({ archivo: "proveedor_octubre.csv", fila: 5, weight_g: peso, material, packaging_revision_date: fecha, evidence_folio: folio });
+export const conflicto = (sku: string, prov: string, antes: [number, string, string, string], despues: [number, string, string, string]): HallazgoParaIA => {
   const cambios: { campo: "weight_g" | "material"; anterior: number | string; nuevo: number | string }[] = [];
   if (antes[0] !== despues[0]) cambios.push({ campo: "weight_g", anterior: antes[0], nuevo: despues[0] });
   if (antes[1] !== despues[1]) cambios.push({ campo: "material", anterior: antes[1], nuevo: despues[1] });
   return { type: "value_conflict", sku, supplier: prov, details: { cambios, anterior: fila(...antes), nueva: nueva(...despues) } };
 };
 
+// Los casos de w11 (corridos también en w12 el 2026-11-01). Los casos
+// plantados propios de w12 están en scripts/escenarios-w12.ts.
 export const ESCENARIOS: Escenario[] = [
   {
     id: "decimal",

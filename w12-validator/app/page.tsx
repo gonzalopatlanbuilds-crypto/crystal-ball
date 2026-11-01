@@ -75,8 +75,9 @@ export default async function Home({ searchParams }: PageProps<"/">) {
 
         <h2 className="mt-8 text-lg font-bold text-zinc-900">Quién paga por esto</h2>
         <p className="mt-3 rounded-xl border border-[#0b5e52] bg-teal-50/50 px-4 py-3 text-sm text-[#0b5e52]">
-          Specright cobra ≈ US$60,000/año. Validator es para productores que
-          no pueden pagar eso, como Concept G.
+          Las plataformas enterprise de este tipo cobran por cotización, fuera
+          del alcance de un productor pequeño. Validator es para productores
+          como Concept G.
         </p>
 
         <h2 className="mt-8 text-lg font-bold text-zinc-900">Lo que Validator NUNCA hace</h2>

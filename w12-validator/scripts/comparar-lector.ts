@@ -6,18 +6,22 @@
 // Uso: node scripts/comparar-lector.ts docs/pruebas/lector-ia-AAAA-MM-DD.json
 import fs from "node:fs";
 import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
-import { ESCENARIOS } from "./escenarios-lector.ts";
+import { ESCENARIOS as ESCENARIOS_W11 } from "./escenarios-lector.ts";
+import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 
 const archivo = process.argv[2];
 if (!archivo) {
   console.log("Uso: node scripts/comparar-lector.ts <salida de probar-lector.json>");
   process.exit(1);
 }
-const { rondas, resultados } = JSON.parse(fs.readFileSync(archivo, "utf8")) as {
+const { rondas, resultados, conjunto } = JSON.parse(fs.readFileSync(archivo, "utf8")) as {
+  conjunto?: "w11" | "w12";
   rondas: number;
   resultados: { escenario: string; estado: string; nombra_causa?: boolean }[];
 };
 
+const ESCENARIOS = conjunto === "w12" ? ESCENARIOS_W12 : ESCENARIOS_W11;
+console.log(`Casos: ${conjunto ?? "w11"}`);
 console.log(`Regla: marcar un conflicto de peso que cambie más de ${UMBRAL_PCT}%. IA: ¿su observación nombra la causa sembrada?\n`);
 console.log("escenario        | regla      | IA (rondas que nombran la causa / mostradas / total)");
 let reglaAciertos = 0, iaMayoria = 0;

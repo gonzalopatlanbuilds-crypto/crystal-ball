@@ -5,7 +5,7 @@ Written before the Core Build rebuild starts. This document is the referee for e
 
 ## VISION
 
-In three years, Validator is the default evidence-reconciliation layer that small and mid-size Mexican producers and importers use before they submit any packaging-compliance claim under the Circular Economy Law: every supplier value they cite carries a source, a version history, and a human sign-off, so a producer who can't afford a $60,000/year enterprise platform can still hand a regulator or a buyer evidence that survives an audit, not just a spreadsheet nobody checked.
+In three years, Validator is the default evidence-reconciliation layer that small and mid-size Mexican producers and importers use before they submit any packaging-compliance claim under the Circular Economy Law: every supplier value they cite carries a source, a version history, and a human sign-off, so a producer who can't afford a quote-based enterprise platform can still hand a regulator or a buyer evidence that survives an audit, not just a spreadsheet nobody checked.
 
 ## USERS
 
