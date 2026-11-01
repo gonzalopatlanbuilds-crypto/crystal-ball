@@ -14,6 +14,7 @@ import {
   type HallazgoNuevo,
   type VersionHistorial,
 } from "../lib/validador.ts";
+import { CONSECUENCIA_DESCARTE, decisionSchema, diferenciaPorcentual, notaVisible, ETIQUETA_DECISION, HISTORIAL_DECISION, NOTA_MAX, SIGNIFICADO_DECISION } from "../lib/decisiones.ts";
 
 let ok = 0;
 let fail = 0;
@@ -259,6 +260,44 @@ const dupVarias = detectarHallazgos([V1, V2, V3misma], [], carga(cambiar(BASE, "
 check("describir duplicado: el folio usado por SIM-1190/Alfa en 3 versiones se nombra UNA vez (pares distintos)",
   !!dupVarias && describirHallazgo(dupVarias) === "Folio FOL-SIM-0001 también citado para SIM-1190 (Proveedor Simulado Alfa)", dupVarias && describirHallazgo(dupVarias));
 check("describir value_conflict: 'Peso declarado: 18.2 g (anterior) vs 24.5 g (nuevo)'", describirHallazgo(conflicto) === "Peso declarado: 18.2 g (anterior) vs 24.5 g (nuevo)", describirHallazgo(conflicto));
+
+// ---------- Feature 4: decisiones ----------
+const UUID = "11111111-2222-3333-4444-555555555555";
+const dec = (cambio: Record<string, unknown>) => decisionSchema.safeParse({ findingId: UUID, decision: "confirmed", note: "Nota real.", ...cambio });
+check("decisión con nota → válida (y la nota se recorta)", dec({ note: "  Nota real.  " }).success && dec({ note: "  Nota real.  " }).data?.note === "Nota real.");
+for (const [nombre, nota] of [["vacía", ""], ["solo espacios", "    "], ["solo saltos de línea y tabs", "\n\t \r\n"], ["ausente", undefined]] as const) {
+  const r = dec({ note: nota });
+  check(`decisión con nota ${nombre} → rechazada con "La nota es obligatoria"`, !r.success && /nota es obligatoria/i.test(r.error.issues[0].message), r);
+}
+// Bug de la prueba mecánica: notas invisibles pasaban trim() + \S.
+for (const [nombre, nota] of [
+  ["solo espacio de ancho cero", "​"],
+  ["nbsp + em space + ancho cero (la que se coló en el proyecto real)", "  ​"],
+  ["marcas de dirección", "‎‏"],
+  ["puntuación sin letras", " ... — ¿? "],
+] as const) {
+  const r = dec({ note: nota });
+  check(`decisión con nota invisible/sin contenido (${nombre}) → rechazada`, !r.success && /nota es obligatoria/i.test(r.error.issues[0].message), r);
+}
+check("notaVisible: la nota invisible que quedó en el proyecto real se marca (false)", notaVisible("  ​") === false);
+check("notaVisible: una nota normal se muestra (true)", notaVisible("Señal de rediseño.") === true);
+check("nota con ñ y acentos → válida", dec({ note: "Señal de diseño nuevo." }).success);
+check("nota con un ancho cero en medio → se guarda sin él", dec({ note: "Er​ror de captura" }).data?.note === "Error de captura");
+check(`nota de ${NOTA_MAX} caracteres → válida`, dec({ note: "x".repeat(NOTA_MAX) }).success);
+check(`nota de ${NOTA_MAX + 1} caracteres → rechazada`, !dec({ note: "x".repeat(NOTA_MAX + 1) }).success);
+check("decisión 'resuelto' → rechazada", !dec({ decision: "resuelto" }).success);
+check("findingId que no es uuid → rechazado", !dec({ findingId: "1 or 1=1" }).success);
+check("diferencia 18.2 → 24.5 = +34.6% (como el mockup)", diferenciaPorcentual(18.2, 24.5) === "+34.6%", diferenciaPorcentual(18.2, 24.5));
+check("diferencia 55 → 50 = -9.1%", diferenciaPorcentual(55, 50) === "-9.1%", diferenciaPorcentual(55, 50));
+check("diferencia sin cambio = 0.0%", diferenciaPorcentual(10, 10) === "0.0%", diferenciaPorcentual(10, 10));
+check("diferencia con anterior 0 → no se calcula (null)", diferenciaPorcentual(0, 5) === null);
+const textosDecision = [...Object.values(ETIQUETA_DECISION), ...Object.values(SIGNIFICADO_DECISION), ...Object.values(HISTORIAL_DECISION), CONSECUENCIA_DESCARTE];
+check("textos de decisión: ninguno dice verificado ni afirma cumplimiento/reciclaje", textosDecision.every((t) => !/verificad|cumple|recicl|recupera|aprobad/i.test(t)), textosDecision);
+// "Descartar" y su consecuencia van separados: la decisión no cambia datos;
+// la evidencia aceptada cambia sola, por el estado de todos los hallazgos.
+check("descartar: dice que no cambia ningún dato y no habla de la referencia", /no cambia ningún dato/.test(SIGNIFICADO_DECISION.discarded) && !/referencia|evidencia aceptada/.test(SIGNIFICADO_DECISION.discarded), SIGNIFICADO_DECISION.discarded);
+check("consecuencia: es automática, exige TODOS los hallazgos de la fila y no la activa esta decisión", /automática/.test(CONSECUENCIA_DESCARTE) && /todos los hallazgos de esa fila/.test(CONSECUENCIA_DESCARTE) && /No lo activa esta decisión/.test(CONSECUENCIA_DESCARTE), CONSECUENCIA_DESCARTE);
+check("consecuencia: nombra la fila completa (SKU + proveedor + carga), no solo el SKU", /este SKU con este proveedor, en esta carga/.test(CONSECUENCIA_DESCARTE), CONSECUENCIA_DESCARTE);
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);

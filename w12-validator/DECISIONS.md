@@ -285,3 +285,119 @@ mismo tiempo que se corre el SQL.
 valores; las dos procedencias completas (archivo, fila, quién, cuándo)
 están en `details` y se muestran en el detalle del hallazgo de la Feature
 4 (`/validador/hallazgos/[id]`), como en w11.
+
+## 2026-11-01 — Deploy 1 (F1-F3 en producción)
+
+Push `5f53ec1..ccb3432` (F3 dc13edf + `vercel.json` ccb3432). Vercel
+w12-validator: success. Como se esperaba, este push construyó también las
+semanas viejas (el `vercel.json` nuevo cambió cada carpeta).
+
+- `npm run verificar:deploy -- https://www.packvalidator.online` → 10/10:
+  home pública 200 con cláusula de sombra y sin llaves; `/login` 200 sin
+  muro de Vercel (Deployment Protection apagado), con aviso y cláusula;
+  `/validador` y `/onboarding` → `/login`; ruta inexistente sin 500.
+- `BASE_URL=https://www.packvalidator.online npm run test:schema` →
+  137/137.
+- `packvalidator.online` resuelve: el apex responde 308 →
+  `https://www.packvalidator.online/`.
+- Login con Google **en producción**: selector de cuentas
+  (`prompt=select_account`, regreso a
+  `https://www.packvalidator.online/auth/callback`); Gonzalo eligió la
+  cuenta y entró directo a `/validador` con su org y sus versiones.
+- Carga en producción después del deploy: `f3-3-un-cambio-mas.csv` otra
+  vez → "se guardó como una versión nueva … idénticas a la anterior". La
+  ventana en que la carga de producción estuvo rota (SQL de F3 corrido,
+  código de F2 todavía desplegado) quedó cerrada.
+
+**Mañana, primer paso:** Feature 4 (revisión humana y bitácora de
+decisiones). Pendientes de días anteriores: `late_revision` en la app real
+(posible desde el 2026-11-02), prueba de no-dueño con una segunda cuenta
+real, y ver si el siguiente push salta los builds de las semanas viejas.
+
+## 2026-11-01 — Feature 4: revisión humana y bitácora de decisiones
+
+**Qué cambió:** portado de w11 (UI de a9cd7c5; `lib/decisiones.ts` y
+`FormularioDecision.tsx` de c4fea64, que ya traen el arreglo de las notas
+invisibles y el texto más claro de "descartar"; sin nada del lector de
+IA, que es la Feature 5).
+
+- `/validador/hallazgos`: lista con filtros Pendiente / Confirmado /
+  Descartado / Todos. "Hallazgos" vuelve a la navegación.
+- `/validador/hallazgos/[id]`: datos (los dos valores y la diferencia
+  calculada por código), las dos procedencias (archivo, fila, quién,
+  cuándo), confirmar o descartar con nota obligatoria, e historial de
+  decisiones del más viejo al más nuevo, con la vigente marcada.
+- Servidor: `decisionSchema` (zod) quita caracteres de formato invisibles
+  y exige al menos una letra o dígito.
+- SQL (sección F4 de w11): `registrar_decision()` es la única puerta;
+  triggers que fijan el org de la decisión y limpian la nota, que mueven
+  el estado del hallazgo a la última decisión (por cualquier camino,
+  también desde el SQL Editor) y que impiden update, delete y truncate de
+  `decisions`. El check estricto de la nota ya existía desde la F1; no se
+  copió el reemplazo `NOT VALID` que w11 necesitó.
+
+**Pruebas:** `test:logica` 139/139 (nota vacía, espacios, saltos y tabs,
+nbsp/em/ancho cero, marcas de dirección, solo puntuación → rechazadas;
+acentos y ñ → válidas; diferencia porcentual; textos sin "verificado" ni
+afirmaciones de cumplimiento). `test:schema` 179/179 (nota obligatoria en
+la base, camino feliz, cambio de opinión = fila nueva, aislamiento entre
+orgs, nadie edita/borra/inserta directo, ni el service role, consistencia
+del estado, la evidencia aceptada cambia solo con TODOS los hallazgos de
+la fila descartados). Build limpio, lint sin errores.
+
+Al juntar las pruebas de F4 con las de F1, el chequeo "un hallazgo nace
+pending por default" de F1 fallaba: revisaba un hallazgo al que la propia
+prueba de F1 ya le había insertado decisiones, y con el trigger de F4 esas
+decisiones sí mueven el estado. Era la prueba, no el código: ahora revisa
+un hallazgo recién insertado.
+
+**Contra el proyecto real** (Gonzalo corrió `sql/schema.sql` con F4):
+
+- `probar-anon.sh`: `registrar_decision` → 401; las 3 funciones de
+  trigger → 404; PATCH y DELETE de `decisions` con la llave pública →
+  401. Ningún 200 en toda la prueba.
+- Navegador, sesión de gonzalo.patlan5, hallazgo SIM-1190 (conflicto
+  18.2 → 24.5 g): el detalle muestra los dos valores, +34.6% y las dos
+  procedencias (`f3-1…csv` fila 2 y `ejemplo-simulado.csv` fila 2, con
+  quién y cuándo). Nota de puros espacios desde la página → el servidor
+  responde "La nota es obligatoria…" y el hallazgo sigue pendiente.
+  Confirmar con nota → "Confirmado", 1 decisión. Descartar con otra nota →
+  "Descartado", 2 decisiones en orden, la primera intacta.
+- Con la sesión real, saltándose el servidor (RPC directo):
+  `registrar_decision` con nota vacía, espacios/saltos/tabs,
+  nbsp+em+ancho cero, solo ancho cero y solo puntuación → **400 "La nota
+  es obligatoria."** las 5. PATCH de la nota, PATCH de la decisión, DELETE
+  de la decisión, INSERT directo en `decisions` y PATCH del estado del
+  hallazgo → 403. Siguen las 2 decisiones y el estado "discarded".
+
+## 2026-11-01 — Pendientes resueltos: revisión tardía y no-dueño
+
+**Revisión posterior en la app real, hoy (no mañana).** Se entrega hoy,
+así que se hizo como en w11: un fixture insertado desde el SQL Editor con
+`uploaded_at` del 2026-10-20 (`docs/pruebas/mecanica/fixture-fecha-pasada.sql`,
+Proveedor Simulado Delta, SIM-LATE-01, validado por el mismo trigger). Se
+probó antes en PGlite: devuelve una fila con la huella calculada, y el
+motor con `mt-3-revision-tardia.csv` da exactamente un `late_revision`.
+Gonzalo lo corrió en Supabase. Luego `mt-3-revision-tardia.csv`
+(revisión 2026-10-28) por la app → **1 hallazgo nuevo**: SIM-LATE-01 ·
+Revisión posterior a evidencia · "Evidencia aceptada el 20 oct; empaque
+revisado el 28 oct", Pendiente. El historial muestra el fixture con su
+fecha (20 oct, 10:00 a.m.). Nota honesta: el fixture es la única versión
+del proyecto que no subió la app; su fecha la puso el SQL Editor, no la
+base al subir.
+
+**No-dueño con una segunda cuenta real.** Gonzalo eligió
+`gonzalopatlan.builds` en el selector de Google:
+
+- Con sesión y **sin organización** (en `/onboarding`): 0 filas en las 5
+  tablas.
+- Se unió con `9a2dpd` (minúsculas, sin guion; se normaliza a `9A2-DPD`)
+  → `/validador`. Ve 2 perfiles, 9 versiones, 6 hallazgos y 2 decisiones
+  de la org.
+- Sobre lo que subió y decidió la otra cuenta: PATCH y DELETE de una
+  versión (`ejemplo-simulado.csv`), PATCH y DELETE de una decisión, y
+  PATCH del estado de un hallazgo → **403 los 5**. Todo intacto (mismo
+  nombre, misma nota, 9 versiones, 2 decisiones).
+
+**Pendiente:** ver en el push de la F4 si Vercel ya salta los builds de
+las semanas viejas.

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ENLACES = [
   { href: "/validador", etiqueta: "Cargar evidencia" },
+  { href: "/validador/hallazgos", etiqueta: "Hallazgos" },
 ];
 
 export default function NavValidador() {

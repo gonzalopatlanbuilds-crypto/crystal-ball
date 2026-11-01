@@ -41,6 +41,10 @@ rpc my_org_id '{}'
 rpc generar_join_code '{}'
 rpc registrar_version '{"p_source_filename":"x.csv","p_raw_rows":[],"p_invalid_rows":[],"p_is_example":false,"p_findings":[],"p_base_seq":null}'
 rpc hallazgo_protegido '{}'
+rpc registrar_decision '{"p_finding_id":"00000000-0000-0000-0000-000000000000","p_decision":"confirmed","p_note":"x"}'
+rpc decision_antes_de_insertar '{}'
+rpc decision_aplica_estado '{}'
+rpc decision_inmutable '{}'
 rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
 rpc huella_evidencia '{"p_rows":[]}'
 rpc evidencia_inmutable '{}'
@@ -56,6 +60,11 @@ for metodo in PATCH DELETE; do
   printf '%-28s ' "anon $metodo versiones"
   curl -s -o "$T" -w '%{http_code} ' -X $metodo "$U/rest/v1/evidence_versions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" \
     -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{"source_filename":"editado.csv"}'
+  head -c 140 "$T"; echo
+done
+for metodo in PATCH DELETE; do
+  printf '%-28s ' "anon $metodo decisiones"
+  curl -s -o "$T" -w '%{http_code} ' -X $metodo "$U/rest/v1/decisions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" -H 'Content-Type: application/json' -d '{"note":"editada"}'
   head -c 140 "$T"; echo
 done
 rm -f "$T"
