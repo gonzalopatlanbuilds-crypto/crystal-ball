@@ -1,5 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
+import { leerCsv } from "../lib/csv.ts";
+import { CSV_EJEMPLO, NOMBRE_EJEMPLO } from "../lib/ejemplo.ts";
 
 // Prueba mecánica de sql/schema.sql en Postgres real (PGlite, WASM), sin
 // Supabase: stub de roles anon/authenticated, auth.uid()/auth.jwt() y los
@@ -186,8 +188,101 @@ r = await intentaSuper(`insert into findings (org_id, evidence_version_id, type,
 check("estado de hallazgo fuera de pending/confirmed/discarded → rechazado", /findings_status_check/.test(r.error), r);
 r = (await db.query(`select status from findings where id = $1`, [filasA.f])).rows[0];
 check("un hallazgo nace pending por default", r?.status === "pending", r);
-r = await intentaSuper(`insert into evidence_versions (org_id, uploaded_by, source_filename, raw_rows, content_sha256) values ($1, $2, 'x.csv', '[]', 'no-es-hash')`, [orgA, U.A]);
-check("content_sha256 que no es sha256 hex → rechazado", /content_sha256_check/.test(r.error), r);
+
+// ---------- Feature 2: carga y versionado append-only ----------
+const ej = leerCsv(CSV_EJEMPLO, "2026-10-25");
+check("el CSV de ejemplo se lee completo (10 filas, 0 rechazadas)", ej.ok && ej.filas.length === 10 && ej.rechazadas.length === 0, ej);
+const filasEj = JSON.stringify(ej.filas);
+const registrar = (who, filas, invalidas = "[]", nombre = "proveedor_octubre.csv", ejemplo = false) =>
+  as(who, `select * from registrar_version($1, $2::jsonb, $3::jsonb, $4)`, [nombre, filas, invalidas, ejemplo]);
+const versionesDe = async (org) => (await db.query(`select count(*)::int n from evidence_versions where org_id = $1`, [org])).rows[0].n;
+
+const antesA = await versionesDe(orgA);
+r = await registrar("A", filasEj, JSON.stringify([{ fila: 12, motivo: "weight_g: \"1e3\" no es un número válido" }]), NOMBRE_EJEMPLO, true);
+const v1 = r.rows?.[0];
+check("A registra el ejemplo como versión nueva (no idéntica a la anterior)", v1 && v1.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 1, r);
+r = await as("B", `select uploaded_by, source_filename, is_example, jsonb_array_length(raw_rows) n, invalid_rows, content_sha256 from evidence_versions where id = $1`, [v1?.version_id]);
+const filaV1 = r.rows?.[0];
+check("procedencia: uploaded_by = quien subió (A), archivo y marca de ejemplo", filaV1?.uploaded_by === U.A && filaV1?.source_filename === NOMBRE_EJEMPLO && filaV1?.is_example === true, r);
+check("B (misma org) ve la versión de A con sus 10 filas", filaV1?.n === 10, r);
+check("las filas rechazadas se guardan con su motivo (no se tiran)", filaV1?.invalid_rows?.[0]?.fila === 12 && /1e3/.test(filaV1?.invalid_rows?.[0]?.motivo), r);
+check("la huella la calcula la base (sha256 hex)", /^[0-9a-f]{64}$/.test(filaV1?.content_sha256 ?? "") && filaV1?.content_sha256 !== "0".repeat(64), r);
+
+// Toda carga válida es una versión nueva, aunque sea idéntica a la última
+// (corrección del 2026-10-25): lo único que cambia es la marca.
+r = await registrar("B", filasEj);
+const vIdentica = r.rows?.[0];
+check("recarga idéntica (por B, misma org) → SÍ se guarda como versión nueva, marcada idéntica a la anterior",
+  vIdentica?.identical_to_previous === true && vIdentica.version_id !== v1?.version_id && (await versionesDe(orgA)) === antesA + 2, r);
+r = await as("A", `select uploaded_by, identical_to_previous from evidence_versions where id = $1`, [vIdentica?.version_id]);
+check("…con su propia procedencia (la subió B) y la marca guardada en la tabla", r.rows?.[0]?.uploaded_by === U.B && r.rows?.[0]?.identical_to_previous === true, r);
+const reordenadas = JSON.stringify([...ej.filas].reverse().map((f, i) => ({ ...f, fila: i + 2 })));
+r = await registrar("A", reordenadas);
+check("mismas filas en otro orden (otros números de fila) → versión nueva, idéntica a la anterior", r.rows?.[0]?.identical_to_previous === true && (await versionesDe(orgA)) === antesA + 3, r);
+const cambiada = JSON.stringify(ej.filas.map((f) => (f.sku === "SIM-1190" && /Alfa/.test(f.supplier) ? { ...f, weight_g: 24.5 } : f)));
+r = await registrar("A", cambiada);
+const v2 = r.rows?.[0];
+check("un peso distinto → versión nueva, NO idéntica", v2?.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 4, r);
+r = await registrar("A", filasEj);
+check("volver al contenido de una versión VIEJA (v1) → no idéntica (solo se compara con la última)", r.rows?.[0]?.identical_to_previous === false && (await versionesDe(orgA)) === antesA + 5, r);
+r = await registrar("C", filasEj);
+check("otra org sube el mismo contenido → no idéntica (la comparación es dentro de la org)", r.rows?.[0]?.identical_to_previous === false, r);
+r = await as("A", `select seq from evidence_versions where org_id = $1 order by seq`, [orgA]);
+check("seq: orden total y estrictamente creciente de las versiones de la org", r.rows?.length === antesA + 5 && r.rows.every((x, k) => k === 0 || Number(x.seq) > Number(r.rows[k - 1].seq)), r);
+await db.query(`insert into evidence_versions (org_id, uploaded_by, source_filename, raw_rows, content_sha256, identical_to_previous) values ($1, $2, 'sql-editor.csv', $3, $4, false)`, [orgA, U.A, filasEj, HASH]);
+r = (await db.query(`select identical_to_previous i, content_sha256 h from evidence_versions where org_id = $1 order by seq desc limit 1`, [orgA])).rows[0];
+check("insertando desde el SQL Editor, la base recalcula la marca y la huella (no confía en lo que le mandan)", r.i === true && r.h !== HASH, r);
+
+// Append-only: nadie edita ni borra, ni el dueño, ni otro de su org, ni
+// otra org, ni el service role.
+for (const who of ["A", "B", "C", "anon"]) {
+  r = await as(who, `update evidence_versions set source_filename = 'editado.csv' where id = $1 returning id`, [v1.version_id]);
+  check(`${who} no puede editar una versión (update)`, negado(r) || r.rows?.length === 0, r);
+  r = await as(who, `delete from evidence_versions where id = $1 returning id`, [v1.version_id]);
+  check(`${who} no puede borrar una versión (delete)`, negado(r) || r.rows?.length === 0, r);
+}
+r = await intentaSuper(`update evidence_versions set raw_rows = '[]' where id = $1`, [v1.version_id]);
+check("ni el service role / SQL Editor edita una versión (trigger)", /append-only/.test(r.error), r);
+r = await intentaSuper(`delete from evidence_versions where id = $1`, [v1.version_id]);
+check("ni el service role / SQL Editor borra una versión (trigger)", /append-only/.test(r.error), r);
+r = await intentaSuper(`truncate evidence_versions cascade`);
+check("ni el service role / SQL Editor hace truncate (trigger)", /append-only/.test(r.error), r);
+r = await as("B", `select source_filename from evidence_versions where id = $1`, [v1.version_id]);
+check("la versión v1 sigue intacta tras los ataques", r.rows?.[0]?.source_filename === NOMBRE_EJEMPLO, r);
+
+// La base revalida cada fila: un cliente que llame al RPC directo, sin la
+// server action, no puede guardar basura.
+const conFila = (cambio) => JSON.stringify([{ ...ej.filas[0], ...cambio }]);
+for (const [nombre, filas, patron] of [
+  ["sin filas válidas", "[]", /al menos una fila/],
+  ["peso como texto '1e3'", conFila({ weight_g: "1e3" }), /weight_g/],
+  ["peso 0", conFila({ weight_g: 0 }), /weight_g/],
+  ["peso negativo", conFila({ weight_g: -5 }), /weight_g/],
+  ["sku con espacios", conFila({ sku: "SIM 1" }), /sku/],
+  ["proveedor tipo fórmula", conFila({ supplier: "=HYPERLINK(1)" }), /supplier/],
+  ["fecha que no existe", conFila({ packaging_revision_date: "2026-02-30" }), /packaging_revision_date/],
+  ["columna extra", conFila({ cumple: true }), /columnas/],
+  ["sin número de fila", JSON.stringify([{ ...ej.filas[0], fila: undefined }]), /columnas/],
+  ["SKU+proveedor repetido", JSON.stringify([ej.filas[0], { ...ej.filas[0], fila: 9 }]), /repetido/],
+]) {
+  r = await registrar("A", filas);
+  check(`RPC directo con ${nombre} → rechazado por la base`, patron.test(r.error ?? ""), r);
+}
+r = await registrar("A", filasEj, JSON.stringify([{ fila: 3 }]));
+check("RPC directo con fila rechazada sin motivo → rechazado", /fila y motivo/.test(r.error ?? ""), r);
+
+Object.assign(U, { D: "dddddddd-0000-0000-0000-000000000004" });
+await db.query(`insert into auth.users values ($1, 'D@test.mx')`, [U.D]);
+r = await registrar("D", filasEj);
+check("usuario sin organización no registra versiones", /organización/.test(r.error ?? ""), r);
+r = await registrar("anon", filasEj);
+check("anon no ejecuta registrar_version", negado(r), r);
+for (const fn of ["validar_filas_evidencia('[]','[]')", "huella_evidencia('[]')"]) {
+  r = await as("A", `select ${fn}`);
+  check(`authenticated no ejecuta ${fn.split("(")[0]} (solo interna)`, negado(r), r);
+}
+r = await ejecutablesPorAnon();
+check("tras la Feature 2, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
 
 // ---------- Rutas por HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");

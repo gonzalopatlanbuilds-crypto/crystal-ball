@@ -259,3 +259,237 @@ create policy "members select own org decisions"
 -- anon seguiría sin leerla, y authenticated sin escribirla.
 revoke all on public.evidence_versions, public.findings, public.decisions from anon;
 revoke insert, update, delete, truncate on public.evidence_versions, public.findings, public.decisions from authenticated;
+
+-- ============================================================
+-- Feature 2: carga y versionado append-only.
+-- La única puerta de escritura es registrar_version() (security definer).
+-- La base vuelve a validar cada fila (aunque la server action ya lo hizo)
+-- y calcula ella misma la huella del contenido: un cliente que llame al
+-- RPC directo no puede saltarse la validación ni inventar la huella.
+-- ============================================================
+
+-- Orden exacto de las versiones dentro de una org. uploaded_at no basta:
+-- dos inserciones en la misma transacción comparten now(), y el motor de
+-- hallazgos (Feature 3) necesita saber cuál es la última sin empates.
+alter table public.evidence_versions add column if not exists seq bigint generated always as identity;
+create unique index if not exists evidence_versions_seq on public.evidence_versions (seq);
+create index if not exists evidence_versions_org_seq on public.evidence_versions (org_id, seq);
+-- true si las filas válidas son idénticas a la versión anterior de la org.
+-- La calcula el trigger de inserción, nunca el cliente.
+alter table public.evidence_versions add column if not exists identical_to_previous boolean not null default false;
+
+-- Devuelve null si las filas son válidas; si no, el motivo.
+create or replace function public.validar_filas_evidencia(p_rows jsonb, p_invalid jsonb)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  r jsonb;
+  claves text[];
+  vistos text[] := '{}';
+  clave text;
+  fecha date;
+begin
+  if jsonb_typeof(p_rows) is distinct from 'array' or jsonb_typeof(p_invalid) is distinct from 'array' then
+    return 'raw_rows e invalid_rows deben ser arreglos';
+  end if;
+  if jsonb_array_length(p_rows) < 1 then
+    return 'una versión necesita al menos una fila válida';
+  end if;
+  if jsonb_array_length(p_rows) + jsonb_array_length(p_invalid) > 1000 then
+    return 'más de 1000 filas';
+  end if;
+
+  for r in select * from jsonb_array_elements(p_rows) loop
+    if jsonb_typeof(r) is distinct from 'object' then
+      return 'cada fila debe ser un objeto';
+    end if;
+    select array_agg(k order by k) into claves from jsonb_object_keys(r) k;
+    if claves is distinct from array['evidence_folio', 'fila', 'material', 'packaging_revision_date', 'sku', 'supplier', 'weight_g'] then
+      return 'fila con columnas distintas a las esperadas';
+    end if;
+    -- Cada cast va en su propio `if`, después de revisar el tipo: SQL no
+    -- garantiza el orden de evaluación de un `or`.
+    if jsonb_typeof(r -> 'fila') is distinct from 'number' or (r ->> 'fila') !~ '^[0-9]{1,5}$' then
+      return 'número de fila inválido';
+    end if;
+    if (r ->> 'fila')::int < 2 then
+      return 'número de fila inválido';
+    end if;
+    if jsonb_typeof(r -> 'sku') is distinct from 'string' or (r ->> 'sku') !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' then
+      return 'sku inválido en la fila ' || (r ->> 'fila');
+    end if;
+    if jsonb_typeof(r -> 'supplier') is distinct from 'string' or (r ->> 'supplier') !~ '\S' or char_length(r ->> 'supplier') > 120
+       or (r ->> 'supplier') ~ '^[=+@-]' or (r ->> 'supplier') ~ '[\x01-\x08\x0b-\x1f\x7f]' then
+      return 'supplier inválido en la fila ' || (r ->> 'fila');
+    end if;
+    if jsonb_typeof(r -> 'weight_g') is distinct from 'number' then
+      return 'weight_g inválido en la fila ' || (r ->> 'fila');
+    end if;
+    if (r ->> 'weight_g')::numeric <= 0 or (r ->> 'weight_g')::numeric > 1000000 then
+      return 'weight_g inválido en la fila ' || (r ->> 'fila');
+    end if;
+    if jsonb_typeof(r -> 'material') is distinct from 'string' or (r ->> 'material') !~ '\S' or char_length(r ->> 'material') > 60
+       or (r ->> 'material') ~ '^[=+@-]' or (r ->> 'material') ~ '[\x01-\x08\x0b-\x1f\x7f]' then
+      return 'material inválido en la fila ' || (r ->> 'fila');
+    end if;
+    if jsonb_typeof(r -> 'packaging_revision_date') is distinct from 'string' or (r ->> 'packaging_revision_date') !~ '^\d{4}-\d{2}-\d{2}$' then
+      return 'packaging_revision_date inválida en la fila ' || (r ->> 'fila');
+    end if;
+    begin
+      fecha := (r ->> 'packaging_revision_date')::date;
+    exception when others then
+      return 'packaging_revision_date no existe en la fila ' || (r ->> 'fila');
+    end;
+    if to_char(fecha, 'YYYY-MM-DD') <> (r ->> 'packaging_revision_date') or fecha < date '2000-01-01' then
+      return 'packaging_revision_date inválida en la fila ' || (r ->> 'fila');
+    end if;
+    if jsonb_typeof(r -> 'evidence_folio') is distinct from 'string' or (r ->> 'evidence_folio') !~ '^[A-Za-z0-9][A-Za-z0-9/._-]{0,63}$' then
+      return 'evidence_folio inválido en la fila ' || (r ->> 'fila');
+    end if;
+    clave := lower(r ->> 'sku') || '|' || lower(r ->> 'supplier');
+    if clave = any(vistos) then
+      return 'SKU + proveedor repetido en la fila ' || (r ->> 'fila');
+    end if;
+    vistos := vistos || clave;
+  end loop;
+
+  for r in select * from jsonb_array_elements(p_invalid) loop
+    -- `is distinct from`, no `<>`: si falta la clave, jsonb_typeof da NULL
+    -- y `NULL <> 'string'` es NULL, que el `if` trata como falso (bug real
+    -- encontrado por test:schema).
+    if jsonb_typeof(r) is distinct from 'object' or jsonb_typeof(r -> 'fila') is distinct from 'number'
+       or jsonb_typeof(r -> 'motivo') is distinct from 'string'
+       or char_length(r ->> 'motivo') not between 1 and 500 then
+      return 'cada fila rechazada debe tener fila y motivo';
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
+revoke all on function public.validar_filas_evidencia(jsonb, jsonb) from public, anon, authenticated;
+
+-- Huella del contenido: sha256 de las filas sin su número de fila, en
+-- orden canónico (el texto de jsonb ordena las claves). Mismos datos =
+-- misma huella, aunque cambien el orden de filas o los saltos de línea.
+create or replace function public.huella_evidencia(p_rows jsonb)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select encode(sha256(convert_to(coalesce(
+    (select jsonb_agg(r - 'fila' order by (r - 'fila')::text) from jsonb_array_elements(p_rows) r),
+    '[]'::jsonb)::text, 'UTF8')), 'hex');
+$$;
+
+revoke all on function public.huella_evidencia(jsonb) from public, anon, authenticated;
+
+-- Append-only, también para el service role y el SQL Editor: ninguna
+-- versión se edita ni se borra, nunca.
+create or replace function public.evidencia_inmutable()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'evidence_versions es append-only: una versión no se edita ni se borra (sube una nueva).'
+    using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.evidencia_inmutable() from public, anon, authenticated;
+
+drop trigger if exists evidence_versions_sin_update_delete on public.evidence_versions;
+create trigger evidence_versions_sin_update_delete
+  before update or delete on public.evidence_versions
+  for each row execute function public.evidencia_inmutable();
+
+drop trigger if exists evidence_versions_sin_truncate on public.evidence_versions;
+create trigger evidence_versions_sin_truncate
+  before truncate on public.evidence_versions
+  for each statement execute function public.evidencia_inmutable();
+
+-- Toda inserción (por el RPC o desde el SQL Editor) pasa por la misma
+-- validación y la misma huella.
+create or replace function public.evidencia_validar_insert()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_motivo text := public.validar_filas_evidencia(new.raw_rows, new.invalid_rows);
+begin
+  if v_motivo is not null then
+    raise exception 'Versión rechazada: %', v_motivo using errcode = 'P0001';
+  end if;
+  new.content_sha256 := public.huella_evidencia(new.raw_rows);
+  -- ¿Mismas filas que la última versión de la org? Se guarda igual (toda
+  -- carga válida es una versión); la marca es lo que usa el motor de
+  -- hallazgos (Feature 3) para no generar nada nuevo.
+  new.identical_to_previous := coalesce((
+    select e.content_sha256 = new.content_sha256 from public.evidence_versions e
+      where e.org_id = new.org_id order by e.seq desc limit 1), false);
+  return new;
+end;
+$$;
+
+revoke all on function public.evidencia_validar_insert() from public, anon, authenticated;
+
+drop trigger if exists evidence_versions_validar on public.evidence_versions;
+create trigger evidence_versions_validar
+  before insert on public.evidence_versions
+  for each row execute function public.evidencia_validar_insert();
+
+-- La única puerta de escritura de versiones. Toda carga válida es una
+-- versión nueva, aunque sea idéntica a la última (bug real de w11: se
+-- saltaba la recarga idéntica; aquí nace corregido y con su prueba de
+-- regresión en test:schema). La Feature 3 le agrega los hallazgos.
+create or replace function public.registrar_version(
+  p_source_filename text,
+  p_raw_rows jsonb,
+  p_invalid_rows jsonb,
+  p_is_example boolean
+)
+returns table (version_id uuid, identical_to_previous boolean, uploaded_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.my_org_id();
+  v_id uuid;
+  v_identica boolean;
+  v_fecha timestamptz;
+  v_motivo text;
+begin
+  if auth.uid() is null or v_org is null then
+    raise exception 'Se requiere sesión y organización.' using errcode = 'P0001';
+  end if;
+  if p_raw_rows is null or p_invalid_rows is null or p_source_filename is null then
+    raise exception 'Faltan datos de la carga.' using errcode = 'P0001';
+  end if;
+  -- Validar antes de tomar el candado: una carga inválida se rechaza sin
+  -- hacer esperar a nadie.
+  v_motivo := public.validar_filas_evidencia(p_raw_rows, p_invalid_rows);
+  if v_motivo is not null then
+    raise exception 'Versión rechazada: %', v_motivo using errcode = 'P0001';
+  end if;
+
+  -- Una carga a la vez por org: "¿idéntica a la última?" se decide sobre
+  -- un orden fijo, sin que dos pestañas se crucen.
+  perform pg_advisory_xact_lock(hashtext('carga:' || v_org::text));
+
+  insert into public.evidence_versions (org_id, uploaded_by, source_filename, raw_rows, invalid_rows, content_sha256, is_example)
+  values (v_org, auth.uid(), btrim(p_source_filename), p_raw_rows, p_invalid_rows, repeat('0', 64), coalesce(p_is_example, false))
+  returning id, evidence_versions.identical_to_previous, evidence_versions.uploaded_at into v_id, v_identica, v_fecha;
+
+  return query select v_id, v_identica, v_fecha;
+end;
+$$;
+
+revoke all on function public.registrar_version(text, jsonb, jsonb, boolean) from public, anon;
+grant execute on function public.registrar_version(text, jsonb, jsonb, boolean) to authenticated;
