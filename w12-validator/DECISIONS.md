@@ -507,3 +507,34 @@ limpio, lint sin errores.
   app → «Llegaste al límite de consultas a la IA (10 por hora por persona,
   30 por día por organización). Intenta más tarde.» Ese intento también
   se cuenta, sin llamar a la API.
+
+## 2026-11-01 — Commit 6: pulido y docs
+
+- `app/validador/loading.tsx`: "Cargando…" mientras el servidor lee la
+  evidencia (de w11).
+- Títulos de pestaña con el nombre del producto: "Cargar evidencia ·
+  Validator", "Hallazgos · Validator", "Revisión de hallazgo · Validator"
+  (venían de w11 como "Validador de Evidencia").
+- Estados vacíos y mensajes de error ya venían con cada feature: sin
+  versiones ("Todavía no hay versiones…"), carga idéntica ("no generó
+  hallazgos"), sin decisiones ("Todavía no hay decisiones. El hallazgo
+  sigue pendiente."), errores de carga, de nota y de la IA en español.
+- README actualizado (qué hace, producción, cómo correr y cómo probar).
+
+**Aviso y cláusula de sombra en todas las pantallas** — comprobado en el
+build de producción local, buscando el texto "Validator no certifica
+cumplimiento ni reciclaje" en cada página: `/`, `/login`, `/validador`,
+`/validador/hallazgos`, el detalle de un hallazgo y la 404. `/onboarding`
+y la página de error usan el mismo componente `Aviso`, pero no se midieron
+en esta pasada (`/onboarding` se vio con el aviso en el navegador al unir
+la segunda cuenta).
+
+**Móvil, 375 px y 320 px** (iframes del mismo origen; cambiar el tamaño de
+la ventana no funciona en esta máquina, igual que en w11): `/`, `/login`
+(sin sesión), `/validador`, `/validador/hallazgos`,
+`/validador/hallazgos?estado=todos`, el detalle de un hallazgo con su
+observación de IA, y la 404 (con sesión). **Ninguna desborda**: el ancho
+del documento es igual al ancho visible en los 14 casos (360/305 cuando
+hay barra de desplazamiento, 375/320 cuando no). `/onboarding` no se midió:
+necesita una cuenta con sesión y sin organización, y las dos cuentas de
+prueba ya están en la org.
