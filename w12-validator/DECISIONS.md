@@ -570,6 +570,19 @@ de una carga anterior en pantalla); el servidor sigue revisando el tamaño.
 4 pruebas nuevas en `test:logica` (191/191). `test:schema` 191/191, lint y
 tipos sin errores.
 
-**Pendiente:** verificar el arreglo en producción después de este deploy
-(subir otra vez `prueba-1500kb.csv`: debe salir el mensaje y no "Algo salió
-mal"); `/onboarding` a 375/320 px.
+**Verificado en producción** (deploy de 14f1359, Vercel success; solo se
+construyó w12): `prueba-1500kb.csv` otra vez → «El archivo pesa más de 200
+KB. No se envió: sube un CSV más pequeño.», sin "Algo salió mal"; el
+formulario y la lista de versiones siguen en pantalla. Control: una carga
+normal justo después (`mt-3-revision-tardia.csv`) se guardó como versión
+idéntica a la anterior, sin hallazgos nuevos, y el aviso de tamaño
+desapareció.
+
+Nota de la prueba: una pestaña de Chrome se quedó en "Cargando…" después de
+una navegación que no respondió; el HTML que mandaba producción estaba
+completo (con "Versiones guardadas" y sin error). En una pestaña nueva la
+página cargó normal: era la pestaña (la máquina tiene poca RAM libre, como
+en w11), no la app.
+
+**Mañana, primer paso / pendientes:** `/onboarding` a 375/320 px (necesita
+una cuenta con sesión y sin organización) y el video de demostración.
