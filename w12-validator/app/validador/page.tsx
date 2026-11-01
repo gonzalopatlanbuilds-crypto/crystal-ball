@@ -3,6 +3,7 @@ import FormularioCarga from "@/components/FormularioCarga";
 import TablaRechazadas from "@/components/TablaRechazadas";
 import { fechaHora } from "@/lib/formato";
 import type { FilaEvidencia, FilaRechazada } from "@/lib/csv";
+import ListaHallazgos, { type HallazgoFila } from "@/components/ListaHallazgos";
 
 interface Version {
   id: string;
@@ -30,6 +31,19 @@ export default async function ValidadorPage() {
     console.error("ValidadorPage: no se pudieron leer las versiones", error);
   }
   const correo = new Map((perfiles ?? []).map((p) => [p.id as string, p.email as string]));
+  const ultima = versiones?.[0];
+  const { data: hallazgos, error: errorHallazgos } = ultima
+    ? await supabase
+        .from("findings")
+        .select("id, type, sku, supplier, status, details")
+        .eq("evidence_version_id", ultima.id)
+        .order("type")
+        .order("sku")
+        .returns<HallazgoFila[]>()
+    : { data: [] as HallazgoFila[], error: null };
+  if (errorHallazgos) {
+    console.error("ValidadorPage: no se pudieron leer los hallazgos", errorHallazgos);
+  }
 
   return (
     <div>
@@ -43,6 +57,31 @@ export default async function ValidadorPage() {
           <FormularioCarga />
         </div>
       </section>
+
+      {ultima && (
+        <section className="mt-8">
+          <h2 className="text-lg font-semibold text-zinc-900">Hallazgos de esta carga</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Última versión: {ultima.source_filename} · {fechaHora(ultima.uploaded_at)}
+          </p>
+          <div className="mt-3">
+            {errorHallazgos ? (
+              <p className="text-sm text-red-700">No se pudieron cargar los hallazgos. Recarga la página.</p>
+            ) : !hallazgos?.length ? (
+              <p className="text-sm text-zinc-600">
+                {ultima.identical_to_previous
+                  ? "Esta carga es idéntica a la anterior: no generó hallazgos."
+                  : "Esta carga no generó hallazgos nuevos."}
+              </p>
+            ) : (
+              <ListaHallazgos hallazgos={hallazgos} />
+            )}
+          </div>
+          <p className="mt-3 text-xs text-zinc-500">
+            Cada hallazgo requiere revisión humana. El validador no decide cumplimiento.
+          </p>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-zinc-900">Versiones guardadas</h2>

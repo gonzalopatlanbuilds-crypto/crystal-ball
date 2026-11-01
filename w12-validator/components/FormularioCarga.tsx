@@ -61,7 +61,7 @@ export default function FormularioCarga() {
           ) : resultado.identicaALaAnterior ? (
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
               <strong>{resultado.archivo}</strong> se guardó como una versión nueva, pero sus filas válidas son idénticas a
-              las de la versión anterior: no hay cambios que revisar.
+              las de la versión anterior: no hay cambios que revisar y no se crearon hallazgos.
               {resultado.rechazadas.length > 0 && ` ${resultado.rechazadas.length} filas rechazadas (abajo, con su motivo).`}
             </div>
           ) : (
@@ -69,7 +69,10 @@ export default function FormularioCarga() {
               <strong>{resultado.archivo}</strong> se guardó como una versión nueva: {resultado.aceptadas}{" "}
               {resultado.aceptadas === 1 ? "fila aceptada" : "filas aceptadas"}
               {resultado.rechazadas.length > 0 && `, ${resultado.rechazadas.length} rechazadas (abajo, con su motivo)`}. Nada
-              anterior se sobrescribió.
+              anterior se sobrescribió.{" "}
+              {resultado.hallazgosNuevos === 0
+                ? "No hay hallazgos nuevos."
+                : `${resultado.hallazgosNuevos} ${resultado.hallazgosNuevos === 1 ? "hallazgo nuevo, pendiente" : "hallazgos nuevos, pendientes"} de revisión humana.`}
               {resultado.columnasIgnoradas.length > 0 && (
                 <span className="mt-1 block text-xs">Columnas ignoradas: {resultado.columnasIgnoradas.join(", ")}.</span>
               )}

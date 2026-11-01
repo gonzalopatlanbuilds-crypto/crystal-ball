@@ -170,3 +170,118 @@ Validator vive en https://www.packvalidator.online (el apex redirige con
 test:schema` → 108/108 (`/` y `/login` 200, `/validador` y `/onboarding`
 → `/login`); la home de producción muestra el aviso y la cláusula de
 sombra. Login con Google en producción todavía no probado.
+
+## 2026-11-01 — Vercel: las semanas viejas ya no se reconstruyen sin cambios
+
+**Problema:** el repo tiene 11 proyectos de Vercel (w02-w12) y cada push
+desplegaba los 11 aunque solo cambiara una carpeta. En w11 eso agotó el
+límite diario de deploys. Gonzalo pidió que las semanas viejas no se
+reconstruyan si su carpeta no cambió.
+
+**Qué se hizo:** un `vercel.json` idéntico en cada carpeta `wNN-*` (la raíz
+de cada proyecto), con `ignoreCommand`. Vercel lo corre antes de cada
+build: si sale con 0, cancela el build; con 1, construye. El comando
+compara `$VERCEL_GIT_PREVIOUS_SHA` (el último deploy exitoso de ese
+proyecto) con `HEAD`, solo en la carpeta del proyecto (`-- .`). Si no hay
+SHA previo o no está en el clon (Vercel clona con historial corto),
+intenta `git fetch --deepen=500` (el repo es público) y, si aun así no
+puede comparar, construye. Ante cualquier duda, construye.
+
+Se eligió el archivo en el repo y no el campo "Ignored Build Step" del
+dashboard: queda versionado, igual para los 11 proyectos, sin configurar
+11 pantallas a mano. Si un proyecto tuviera algo escrito en ese campo del
+dashboard, `vercel.json` tiene prioridad.
+
+**Probado local** (simulando la variable): w05 contra 057da08 → 0
+(saltar); w12 contra 057da08 → 1 (F2 cambió w12); w12 contra 5f53ec1 → 0;
+sin SHA → 1; SHA inexistente → 1.
+
+**Todavía no probado en Vercel:** el push que lo sube cambia las 11
+carpetas (agrega el archivo), así que ese push construye todo una última
+vez. El efecto se verá en el push siguiente: solo debería construir lo que
+cambió. Falta comprobar si un build cancelado por este comando cuenta o no
+para el límite diario de deploys; aun si cuenta, ahorra los minutos de
+build de 10 proyectos por push.
+
+## 2026-11-01 — Feature 3: motor determinista de hallazgos
+
+**Qué cambió:** portado de w11 tal como quedó en su commit de F3
+(7c9ca0e). `lib/validador.ts` no cambió en w11 después de eso. Ver la
+entrada de F3 en el DECISIONS.md de w11 para el detalle de las reglas.
+
+- `lib/validador.ts`: funciones puras, sin IA. Compara la carga nueva
+  contra la **última evidencia aceptada** de cada SKU + proveedor (regla
+  confirmada por Gonzalo, ver arriba) y produce `missing_supplier`,
+  `value_conflict` (los dos valores y las dos procedencias),
+  `late_revision` y `possible_duplicate` (etiqueta fija "Posible
+  duplicado, sin verificar"; nunca "verificado").
+- La server action lee historial y hallazgos con la sesión (RLS aplica),
+  corre el motor y guarda versión + hallazgos en una sola transacción con
+  `registrar_version()` de 6 argumentos (`p_findings`, `p_base_seq`; si
+  entró otra carga en medio, `CAMBIO_CONCURRENTE` y reintenta una vez).
+- `/validador` muestra "Hallazgos de esta carga" (SKU, tipo, descripción
+  armada por código, "Pendiente").
+- SQL: `fingerprint` único por org (un hallazgo no se crea dos veces);
+  trigger `hallazgo_protegido`: todo hallazgo nace `pending` (también
+  desde el SQL Editor), no se borra ni se hace truncate, y su estado solo
+  cambia desde el flujo de decisiones (Feature 4). Una versión idéntica a
+  la anterior no guarda hallazgos aunque el cliente los mande.
+- En `sql/schema.sql` la `registrar_version()` de 4 argumentos de la F2
+  se quitó del archivo (la de 6 la reemplaza y la sección F3 borra la
+  vieja con `drop function if exists`), igual que en el schema final de
+  w11.
+- `scripts/verificar-deploy.mjs` (nuevo, para el deploy 1): además de lo
+  de w11, revisa la home pública (`/` 200, cláusula de sombra, sin
+  llaves) y que `/login` muestre la cláusula. Contra la producción actual
+  (F1): 10/10.
+
+**Pruebas:** `test:logica` 114/114 (cada tipo con sus bordes, recarga
+idéntica = 0 hallazgos, dedup, aceptación según el estado, textos sin
+"verificado" ni afirmaciones de cumplimiento). `test:schema` 133/133
+(flujo de punta a punta con los 4 tipos guardados y pendientes, recarga
+idéntica = 0 hallazgos aunque el cliente mande uno, nadie cambia el
+estado ni borra hallazgos, `CAMBIO_CONCURRENTE`, otra org no ve nada).
+Build limpio, lint sin errores.
+
+**Límite conocido (de w11):** `late_revision` en la app real necesita
+evidencia aceptada subida un día anterior (una fecha de revisión no puede
+estar en el futuro). Las versiones de la org de prueba son de hoy, así que
+se prueba en la app real a partir del 2026-11-02; mientras tanto está
+cubierta por las dos suites.
+
+**Contra el proyecto real** (Gonzalo corrió `sql/schema.sql` con la
+sección F3):
+
+- `probar-anon.sh`: `registrar_version` de 6 argumentos → 401 (existe y
+  anon no la ejecuta); `hallazgo_protegido` → 404 (trigger, no expuesta);
+  tablas, escrituras y cambio de estado → permission denied.
+- Navegador (build local con F3, sesión de gonzalo.patlan5, org
+  "Validator Simulado W12", historial: ejemplo, ejemplo idéntico,
+  `prueba-f2-filas-malas.csv`):
+  1. `f3-1-faltante-conflicto-duplicado.csv` → 9 filas, **4 hallazgos
+     nuevos pendientes**: falta Alfa en SIM-4821 (con su procedencia,
+     `ejemplo-simulado.csv` fila 6), "Posible duplicado, sin verificar" en
+     SIM-1190 y SIM-2034 (FOL-SIM-0001), conflicto de peso SIM-1190/Alfa
+     18.2 → 24.5 g. Lo mismo que predice el motor.
+  2. El mismo archivo otra vez → versión nueva "Idéntica a la anterior",
+     "no se crearon hallazgos".
+  3. `f3-3-un-cambio-mas.csv` → **1 hallazgo nuevo** (SIM-6018/Beta 55 →
+     60 g), sin repetir los 4 anteriores.
+- Con la sesión real (desde la consola, sin imprimir llave ni token):
+  PATCH del estado a `confirmed`, DELETE e INSERT de un hallazgo con
+  `status: confirmed` → 403; los 5 hallazgos siguen `pending`.
+
+**Incidente en la prueba (no es bug del código):** el primer intento dio
+"No se pudo guardar la versión". El log mostró `PGRST202`: la página
+llamaba a `registrar_version` de 4 argumentos. Era el servidor local de la
+prueba de F2, que seguía vivo en el puerto 3000 (el nuevo no arrancó por
+`EADDRINUSE`). No se guardó nada. **Consecuencia real:** desde que el SQL
+de F3 borró la función de 4 argumentos, la carga en producción (que corre
+F2) falla hasta que se despliegue F3. Por eso F3 se sube enseguida.
+Lección para los siguientes cambios de firma: desplegar el código casi al
+mismo tiempo que se corre el SQL.
+
+**Lista de hallazgos:** en `/validador` cada hallazgo muestra los dos
+valores; las dos procedencias completas (archivo, fila, quién, cuándo)
+están en `details` y se muestran en el detalle del hallazgo de la Feature
+4 (`/validador/hallazgos/[id]`), como en w11.
