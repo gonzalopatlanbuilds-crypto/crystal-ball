@@ -1,7 +1,7 @@
 // Prueba mecánica de la lógica pura (sin base de datos).
 // Uso: npm run test:logica
 import { crearOrgSchema, normalizarJoinCode, unirseOrgSchema } from "../lib/orgs.ts";
-import { COLUMNAS, FILAS_MAX, hoyMexico, leerCsv, leerFecha, leerNumero, TAMANO_MAX_BYTES, validarArchivo } from "../lib/csv.ts";
+import { COLUMNAS, excedeTamano, FILAS_MAX, hoyMexico, MENSAJE_TAMANO, leerCsv, leerFecha, leerNumero, TAMANO_MAX_BYTES, validarArchivo } from "../lib/csv.ts";
 import { CSV_EJEMPLO } from "../lib/ejemplo.ts";
 import fs from "node:fs";
 import { entradaLector, ENTRADA_MAX, type HallazgoParaIA } from "../lib/lector-ia.ts";
@@ -49,6 +49,12 @@ check("archivo vacío se rechaza", validarArchivo("vacio.csv", "text/csv", 0) !=
 check(`archivo de más de ${TAMANO_MAX_BYTES / 1024} KB se rechaza`, validarArchivo("grande.csv", "text/csv", TAMANO_MAX_BYTES + 1) !== null);
 check("archivo justo en el límite pasa", validarArchivo("limite.csv", "text/csv", TAMANO_MAX_BYTES) === null);
 
+// Bug de la prueba mecánica: el formulario y el servidor usan la misma
+// regla de tamaño (el formulario ya no envía lo que se va a rechazar).
+check("tamaño: 200 KB exactos pasan", !excedeTamano(TAMANO_MAX_BYTES));
+check("tamaño: 200 KB + 1 byte se rechaza", excedeTamano(TAMANO_MAX_BYTES + 1));
+check("tamaño: 1.5 MB (lo que tumbaba la página) se rechaza", excedeTamano(1536002));
+check("tamaño: el mensaje del formulario es el mismo del servidor", validarArchivo("grande.csv", "text/csv", 1536002) === MENSAJE_TAMANO && /200 KB/.test(MENSAJE_TAMANO));
 // ---------- Feature 2: números ----------
 const num = (t: string) => {
   const r = leerNumero(t);

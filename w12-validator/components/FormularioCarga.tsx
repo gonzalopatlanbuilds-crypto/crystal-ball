@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { cargarEjemplo, subirCsv, type CargaState } from "@/app/validador/actions";
-import { TAMANO_MAX_BYTES } from "@/lib/csv";
+import { excedeTamano, MENSAJE_TAMANO, TAMANO_MAX_BYTES } from "@/lib/csv";
 import TablaRechazadas from "@/components/TablaRechazadas";
 
 export default function FormularioCarga() {
@@ -12,12 +12,34 @@ export default function FormularioCarga() {
   const [avisoTamano, setAvisoTamano] = useState<string | null>(null);
   // Se muestra el resultado de la última acción que terminó.
   const [ultima, setUltima] = useState<"archivo" | "ejemplo">("archivo");
-  const resultado = ultima === "archivo" ? estado : estadoEj;
+  // true cuando el último intento se bloqueó aquí por tamaño: el resultado
+  // de una carga anterior no debe quedar en pantalla como si fuera de este.
+  const [bloqueado, setBloqueado] = useState(false);
+  const resultado = bloqueado ? undefined : ultima === "archivo" ? estado : estadoEj;
   const ocupado = subiendo || cargandoEj;
 
   return (
     <div>
-      <form action={subir} onSubmit={() => setUltima("archivo")}>
+      <form
+        action={subir}
+        onSubmit={(e) => {
+          // Un archivo de más de 1 MB ni siquiera llega a subirCsv: Next.js
+          // corta la petición antes (límite de body de las Server Actions) y
+          // la página entera caía en "Algo salió mal" (bug de la prueba
+          // mecánica). Arriba de TAMANO_MAX_BYTES el servidor lo rechazaría
+          // de todos modos, así que no se envía. El servidor sigue revisando
+          // el tamaño: esto solo evita mandar algo que se va a rechazar.
+          const f = (e.currentTarget.elements.namedItem("archivo") as HTMLInputElement | null)?.files?.[0];
+          if (f && excedeTamano(f.size)) {
+            e.preventDefault();
+            setBloqueado(true);
+            setAvisoTamano(`${MENSAJE_TAMANO} No se envió: sube un CSV más pequeño.`);
+            return;
+          }
+          setBloqueado(false);
+          setUltima("archivo");
+        }}
+      >
         <label className="relative block cursor-pointer rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-6 text-center hover:border-[#0b5e52]">
           <span className="block text-sm text-zinc-700">Arrastra tu CSV o selecciona un archivo</span>
           <span className="mt-1 block truncate text-xs text-zinc-500">{nombre ?? `Máximo ${TAMANO_MAX_BYTES / 1024} KB`}</span>
@@ -30,8 +52,9 @@ export default function FormularioCarga() {
             onChange={(e) => {
               const f = e.target.files?.[0];
               setNombre(f?.name ?? null);
-              // Solo un aviso temprano; el límite real lo revisa el servidor.
-              setAvisoTamano(f && f.size > TAMANO_MAX_BYTES ? `Este archivo pesa más de ${TAMANO_MAX_BYTES / 1024} KB y será rechazado.` : null);
+              // Aviso temprano; al enviar se bloquea (ver onSubmit) y el
+              // límite real lo sigue revisando el servidor.
+              setAvisoTamano(f && excedeTamano(f.size) ? `${MENSAJE_TAMANO} No se puede enviar.` : null);
             }}
           />
         </label>
@@ -44,7 +67,14 @@ export default function FormularioCarga() {
           {subiendo ? "Validando…" : "Validar carga"}
         </button>
       </form>
-      <form action={ejemplo} onSubmit={() => setUltima("ejemplo")} className="mt-2">
+      <form
+        action={ejemplo}
+        onSubmit={() => {
+          setBloqueado(false);
+          setUltima("ejemplo");
+        }}
+        className="mt-2"
+      >
         <button
           type="submit"
           disabled={ocupado}

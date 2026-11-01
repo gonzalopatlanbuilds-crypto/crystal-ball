@@ -538,3 +538,38 @@ del documento es igual al ancho visible en los 14 casos (360/305 cuando
 hay barra de desplazamiento, 375/320 cuando no). `/onboarding` no se midió:
 necesita una cuenta con sesión y sin organización, y las dos cuentas de
 prueba ya están en la org.
+
+## 2026-11-01 — Prueba mecánica (PACKET §10) y bug real
+
+Resultados (proyecto real; producción = https://www.packvalidator.online):
+
+| # | Prueba | Resultado |
+|---|---|---|
+| 1 | Falta un proveedor | ✅ `f3-1` → SIM-4821/Alfa, con su procedencia (F3, base real) |
+| 2 | Valor en conflicto | ✅ 18.2 → 24.5 g con las dos procedencias (F3/F4) |
+| 3 | Revisión posterior | ✅ fixture del 20-oct + `mt-3` → 1 hallazgo (F4) |
+| 4 | Folio reutilizado | ✅ "Posible duplicado, sin verificar" en SIM-1190 y SIM-2034 |
+| 5 | Decidir sin nota | ✅ en producción: nota de espacios+nbsp+ancho cero → "La nota es obligatoria…", sigue Pendiente; RPC directo → 400 (F4) |
+| 6 | Editar una decisión | ✅ PATCH/DELETE → 403 con dueño y con no-dueño; cambio de opinión = fila nueva (F4) |
+| 7 | Guardia de la IA | ✅ 3/3 provocadas rechazadas, 3 ataques resistidos; en producción la IA responde sin veredicto ni cifras nuevas (llave de Vercel OK) |
+| 8 | RLS / anon | ✅ anon: todo 401/permission denied; sin org: 0 filas; no-dueño: 403 |
+| 9 | Recargar lo mismo | ✅ en producción: "idénticas a la anterior… no se crearon hallazgos" |
+
+**Bug real (encontrado en producción):** subir un CSV de **1.5 MB** tumbaba
+toda la página a "Algo salió mal" (React #441 en consola) en vez de decir
+"El archivo pesa más de 200 KB". Con 300 KB el mensaje sí salía. Causa
+(confirmada en `next/dist/server/app-render/action-handler.js`): Next.js
+corta las Server Actions de más de 1 MB con un 413 **antes** de que corra
+`subirCsv`, y ese error sube al error boundary. El formulario solo avisaba
+"será rechazado" pero enviaba igual.
+
+**Arreglo:** `excedeTamano()` y `MENSAJE_TAMANO` en `lib/csv.ts`, usados por
+el formulario y por el servidor. El formulario ya no envía un archivo de
+más de 200 KB (muestra el mismo mensaje del servidor y no deja el resultado
+de una carga anterior en pantalla); el servidor sigue revisando el tamaño.
+4 pruebas nuevas en `test:logica` (191/191). `test:schema` 191/191, lint y
+tipos sin errores.
+
+**Pendiente:** verificar el arreglo en producción después de este deploy
+(subir otra vez `prueba-1500kb.csv`: debe salir el mensaje y no "Algo salió
+mal"); `/onboarding` a 375/320 px.

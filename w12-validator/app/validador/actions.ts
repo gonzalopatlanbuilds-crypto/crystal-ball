@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { hoyMexico, leerCsv, TAMANO_MAX_BYTES, validarArchivo, type FilaRechazada } from "@/lib/csv";
+import { excedeTamano, hoyMexico, leerCsv, MENSAJE_TAMANO, validarArchivo, type FilaRechazada } from "@/lib/csv";
 import { CSV_EJEMPLO, NOMBRE_EJEMPLO } from "@/lib/ejemplo";
 import { detectarHallazgos, type HallazgoGuardado, type VersionHistorial } from "@/lib/validador";
 
@@ -122,8 +122,8 @@ export async function subirCsv(_prev: CargaState, formData: FormData): Promise<C
   const bytes = await archivo.arrayBuffer();
   // archivo.size lo declara el cliente; el límite se revisa sobre los
   // bytes que de verdad llegaron.
-  if (bytes.byteLength > TAMANO_MAX_BYTES) {
-    return { error: `El archivo pesa más de ${TAMANO_MAX_BYTES / 1024} KB.` };
+  if (excedeTamano(bytes.byteLength)) {
+    return { error: MENSAJE_TAMANO };
   }
   let texto: string;
   try {

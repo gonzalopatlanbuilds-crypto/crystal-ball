@@ -14,6 +14,13 @@ export const COLUMNAS = [
 ] as const;
 
 export const TAMANO_MAX_BYTES = 200 * 1024;
+export const MENSAJE_TAMANO = `El archivo pesa más de ${TAMANO_MAX_BYTES / 1024} KB.`;
+
+// La misma regla para el formulario (que no envía un archivo que se va a
+// rechazar) y para el servidor (que revisa los bytes que de verdad llegaron).
+export function excedeTamano(bytes: number): boolean {
+  return bytes > TAMANO_MAX_BYTES;
+}
 export const FILAS_MAX = 1000;
 export const PESO_MAX_G = 1_000_000;
 
@@ -53,7 +60,7 @@ export function validarArchivo(nombre: string, tipo: string, tamano: number): st
   const tiposOk = ["", "text/csv", "text/plain", "application/vnd.ms-excel", "application/csv"];
   if (!tiposOk.includes(tipo.toLowerCase())) return `Tipo de archivo no aceptado (${tipo}). Sube un CSV.`;
   if (tamano === 0) return "El archivo está vacío.";
-  if (tamano > TAMANO_MAX_BYTES) return `El archivo pesa más de ${TAMANO_MAX_BYTES / 1024} KB.`;
+  if (excedeTamano(tamano)) return MENSAJE_TAMANO;
   if (nombre.length > 200) return "El nombre del archivo es demasiado largo.";
   return null;
 }
