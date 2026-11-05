@@ -694,3 +694,55 @@ suele listar varias posibilidades y a veces deja la que importa al final:
 úsala como pista, no como filtro.» `test:logica` revisa que ese texto
 diga el mismo "N de 10" que sale del archivo de salidas reales de w12, así
 que no puede volver a quedar un número de otra semana.
+
+## 2026-11-05 — Prueba de usuarios, caso 1: pendientes de cargas anteriores visibles
+
+**Dolor:** cuando una carga no creaba hallazgos nuevos, el mensaje decía
+"No hay hallazgos nuevos" a secas y la sección "Hallazgos de esta carga"
+salía vacía, aunque esa misma carga seguía produciendo hallazgos que ya
+estaban pendientes de una carga anterior (la huella evita crearlos dos
+veces). Quien sube el archivo entiende que todo está bien y el pendiente
+queda escondido.
+
+**Cambio:**
+
+- `lib/validador.ts` → `pendientesQueAplican(historial, guardados, carga)`:
+  corre el mismo motor (`reconstruir` + `candidatos`) sobre las filas de la
+  carga y devuelve las huellas de los candidatos que ya existen como
+  hallazgo **pendiente**. Confirmados y descartados no cuentan. Incluye la
+  recarga idéntica (sus filas vuelven a producir los mismos candidatos) y
+  los duplicados por huella (p. ej. el mismo proveedor faltante).
+- `app/validador/actions.ts`: la carga devuelve `pendientesAnteriores`.
+- Mensaje verde (`components/FormularioCarga.tsx`):
+  - 0 nuevos, 0 pendientes → «No hay hallazgos.»
+  - 0 nuevos, N pendientes → «No hay hallazgos nuevos. Tienes N
+    hallazgo(s) pendiente(s) de cargas anteriores.»
+  - nuevos y pendientes → el texto de nuevos + «Además, tienes N …».
+  - El aviso gris de recarga idéntica también agrega la línea de pendientes.
+- Sección "Hallazgos de esta carga" (`app/validador/page.tsx`): muestra los
+  hallazgos que creó esta carga con la etiqueta **Nuevo** y, debajo, los
+  pendientes de cargas anteriores que siguen aplicando con la etiqueta
+  **Ya reportado**. Se recalcula al mostrar la página, con la última versión
+  contra las versiones anteriores a ella y los estados actuales: si alguien
+  ya revisó el pendiente, deja de aparecer.
+- `test:logica`: 7 casos nuevos de `pendientesQueAplican` (201 en total).
+
+**Decisión de alcance:** el texto pedido cubría "0 nuevos con pendientes";
+cuando hay nuevos y también pendientes de antes se muestran los dos y el
+mensaje los cuenta por separado, por consistencia (la regla "siguen
+aplicando a esta carga" es la misma).
+
+## 2026-11-05 — Prueba de usuarios, caso 2: enlace "Ver hallazgos"
+
+El mensaje verde, cuando hay hallazgos nuevos o pendientes de antes, lleva
+un enlace **Ver hallazgos** a `#hallazgos-de-esta-carga` (la sección de la
+misma página; `ID_HALLAZGOS_CARGA` en `lib/formato.ts`, con
+`scroll-mt-4`). Sin hallazgos no se muestra enlace. Va en el mismo commit
+que el caso 1 porque el enlace depende del conteo de pendientes.
+
+## 2026-11-05 — Pendiente (no esta semana): caso 3, scroll en móvil
+
+El caso 3 de la prueba de usuarios (scroll en móvil) queda **pendiente**
+por decisión de Gonzalo: no se tocó esta semana. El enlace "Ver hallazgos"
+del caso 2 lleva a la sección, pero no resuelve el caso 3 ni se midió en
+375/320 px.

@@ -8,6 +8,8 @@ export interface HallazgoFila {
   supplier: string | null;
   status: EstadoHallazgo;
   details: Detalles;
+  // En "Hallazgos de esta carga": si lo creó esta carga o ya venía de antes.
+  etiqueta?: "Nuevo" | "Ya reportado";
 }
 
 const ESTILO_ESTADO: Record<EstadoHallazgo, string> = {
@@ -35,6 +37,15 @@ export default function ListaHallazgos({ hallazgos }: { hallazgos: HallazgoFila[
               <span className="mt-1 inline-block rounded-full border border-amber-700/40 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900">
                 {ETIQUETA_TIPO[h.type]}
               </span>
+              {h.etiqueta && (
+                <span
+                  className={`ml-1 mt-1 inline-block rounded-full border px-2 py-0.5 text-xs ${
+                    h.etiqueta === "Nuevo" ? "border-[#0b5e52]/40 bg-teal-50 text-[#0b5e52]" : "border-zinc-300 bg-zinc-100 text-zinc-600"
+                  }`}
+                >
+                  {h.etiqueta}
+                </span>
+              )}
             </div>
             <span className={`shrink-0 rounded-full border px-3 py-1 text-xs ${ESTILO_ESTADO[h.status]}`}>{ETIQUETA_ESTADO[h.status]}</span>
           </div>

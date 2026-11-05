@@ -4,6 +4,31 @@ import { useActionState, useState } from "react";
 import { cargarEjemplo, subirCsv, type CargaState } from "@/app/validador/actions";
 import { excedeTamano, MENSAJE_TAMANO, TAMANO_MAX_BYTES } from "@/lib/csv";
 import TablaRechazadas from "@/components/TablaRechazadas";
+import { ID_HALLAZGOS_CARGA } from "@/lib/formato";
+
+function textoPendientes(n: number): string {
+  return `Tienes ${n} ${n === 1 ? "hallazgo pendiente" : "hallazgos pendientes"} de cargas anteriores.`;
+}
+
+// Prueba de usuarios: "No hay hallazgos nuevos" a secas hacía
+// creer que todo estaba bien aunque quedaran pendientes de antes. Solo se
+// dice "No hay hallazgos." cuando de verdad no queda nada pendiente.
+function mensajeHallazgos(nuevos: number, pendientes: number): string {
+  if (nuevos === 0) return pendientes === 0 ? "No hay hallazgos." : `No hay hallazgos nuevos. ${textoPendientes(pendientes)}`;
+  const n = `${nuevos} ${nuevos === 1 ? "hallazgo nuevo, pendiente" : "hallazgos nuevos, pendientes"} de revisión humana.`;
+  return pendientes === 0 ? n : `${n} Además, ${textoPendientes(pendientes).replace(/^T/, "t")}`;
+}
+
+// Lleva directo a la lista de hallazgos de esta carga (más abajo en la
+// misma página), para no tener que buscarla.
+function EnlaceHallazgos({ nuevos, pendientes }: { nuevos: number; pendientes: number }) {
+  if (nuevos + pendientes === 0) return null;
+  return (
+    <a href={`#${ID_HALLAZGOS_CARGA}`} className="mt-1 block font-semibold text-[#0b5e52] underline">
+      Ver hallazgos
+    </a>
+  );
+}
 
 export default function FormularioCarga() {
   const [estado, subir, subiendo] = useActionState<CargaState, FormData>(subirCsv, undefined);
@@ -92,6 +117,8 @@ export default function FormularioCarga() {
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
               <strong>{resultado.archivo}</strong> se guardó como una versión nueva, pero sus filas válidas son idénticas a
               las de la versión anterior: no hay cambios que revisar y no se crearon hallazgos.
+              {resultado.pendientesAnteriores > 0 && ` ${textoPendientes(resultado.pendientesAnteriores)}`}
+              <EnlaceHallazgos nuevos={0} pendientes={resultado.pendientesAnteriores} />
               {resultado.rechazadas.length > 0 && ` ${resultado.rechazadas.length} filas rechazadas (abajo, con su motivo).`}
             </div>
           ) : (
@@ -100,9 +127,8 @@ export default function FormularioCarga() {
               {resultado.aceptadas === 1 ? "fila aceptada" : "filas aceptadas"}
               {resultado.rechazadas.length > 0 && `, ${resultado.rechazadas.length} rechazadas (abajo, con su motivo)`}. Nada
               anterior se sobrescribió.{" "}
-              {resultado.hallazgosNuevos === 0
-                ? "No hay hallazgos nuevos."
-                : `${resultado.hallazgosNuevos} ${resultado.hallazgosNuevos === 1 ? "hallazgo nuevo, pendiente" : "hallazgos nuevos, pendientes"} de revisión humana.`}
+              {mensajeHallazgos(resultado.hallazgosNuevos, resultado.pendientesAnteriores)}
+              <EnlaceHallazgos nuevos={resultado.hallazgosNuevos} pendientes={resultado.pendientesAnteriores} />
               {resultado.columnasIgnoradas.length > 0 && (
                 <span className="mt-1 block text-xs">Columnas ignoradas: {resultado.columnasIgnoradas.join(", ")}.</span>
               )}

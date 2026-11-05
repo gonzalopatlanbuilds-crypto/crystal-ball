@@ -12,3 +12,7 @@ const FECHA_HORA = new Intl.DateTimeFormat("es-MX", {
 export function fechaHora(iso: string): string {
   return FECHA_HORA.format(new Date(iso));
 }
+
+// Id de la sección "Hallazgos de esta carga" en /validador: el enlace
+// "Ver hallazgos" del mensaje de la carga apunta ahí.
+export const ID_HALLAZGOS_CARGA = "hallazgos-de-esta-carga";

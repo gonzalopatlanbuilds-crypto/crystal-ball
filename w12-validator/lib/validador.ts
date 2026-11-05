@@ -276,6 +276,21 @@ export function detectarHallazgos(historial: VersionHistorial[], guardados: Hall
   });
 }
 
+// Huellas de hallazgos PENDIENTES ya guardados (de cargas anteriores) que
+// esta carga vuelve a producir: siguen aplicando aunque no se creen de
+// nuevo (prueba de usuarios: "No hay hallazgos nuevos" a secas escondía
+// que seguían pendientes). Incluye la recarga idéntica: sus filas
+// producen los mismos candidatos que la versión anterior.
+export function pendientesQueAplican(historial: VersionHistorial[], guardados: HallazgoGuardado[], carga: CargaNueva): string[] {
+  const pendientes = new Set(guardados.filter((h) => h.status === "pending").map((h) => h.fingerprint));
+  const { aceptadas, usos } = reconstruir(historial, guardados);
+  const salida = new Set<string>();
+  for (const h of candidatos(aceptadas, usos, carga.source_filename, carga.filas)) {
+    if (pendientes.has(h.fingerprint)) salida.add(h.fingerprint);
+  }
+  return [...salida];
+}
+
 // Texto de una línea para la lista. Lo arma el código, nunca la IA.
 export function describirHallazgo(h: { type: TipoHallazgo; supplier: string | null; details: Detalles }): string {
   const fmtFecha = (iso: string) => new Intl.DateTimeFormat("es-MX", { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${iso}T12:00:00Z`));

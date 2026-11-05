@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { excedeTamano, hoyMexico, leerCsv, MENSAJE_TAMANO, validarArchivo, type FilaRechazada } from "@/lib/csv";
 import { CSV_EJEMPLO, NOMBRE_EJEMPLO } from "@/lib/ejemplo";
-import { detectarHallazgos, type HallazgoGuardado, type VersionHistorial } from "@/lib/validador";
+import { detectarHallazgos, pendientesQueAplican, type HallazgoGuardado, type VersionHistorial } from "@/lib/validador";
 
 export type CargaState =
   | undefined
@@ -15,6 +15,8 @@ export type CargaState =
       versionId: string;
       identicaALaAnterior: boolean;
       hallazgosNuevos: number;
+      // Pendientes de cargas anteriores que esta carga vuelve a producir.
+      pendientesAnteriores: number;
       aceptadas: number;
       rechazadas: FilaRechazada[];
       columnasIgnoradas: string[];
@@ -46,11 +48,13 @@ async function guardarConHallazgos(
     supabase.from("findings").select("fingerprint, status").returns<HallazgoGuardado[]>(),
   ]);
   if (versiones.error || guardados.error) {
-    return { error: versiones.error ?? guardados.error, fila: null };
+    return { error: versiones.error ?? guardados.error, fila: null, pendientes: 0 };
   }
   // PostgREST devuelve bigint como número; se normaliza por si llega texto.
   const historial = versiones.data.map((v) => ({ ...v, seq: Number(v.seq) }));
-  const hallazgos = detectarHallazgos(historial, guardados.data, { source_filename: archivo, filas });
+  const carga = { source_filename: archivo, filas };
+  const hallazgos = detectarHallazgos(historial, guardados.data, carga);
+  const pendientes = pendientesQueAplican(historial, guardados.data, carga).length;
   const { data, error } = await supabase.rpc("registrar_version", {
     p_source_filename: archivo,
     p_raw_rows: filas,
@@ -61,7 +65,7 @@ async function guardarConHallazgos(
   });
   // Mismo cast manual que create_org (w10): un RPC `returns table` llega
   // como arreglo en tiempo de ejecución.
-  return { error, fila: (data as unknown as RegistrarVersionRow[] | null)?.[0] ?? null };
+  return { error, fila: (data as unknown as RegistrarVersionRow[] | null)?.[0] ?? null, pendientes };
 }
 
 // El mismo camino para un archivo subido y para el ejemplo: la validación
@@ -86,11 +90,11 @@ async function procesar(archivo: string, texto: string, esEjemplo: boolean): Pro
     };
   }
 
-  let { error, fila } = await guardarConHallazgos(supabase, archivo, leido.filas, leido.rechazadas, esEjemplo);
+  let { error, fila, pendientes } = await guardarConHallazgos(supabase, archivo, leido.filas, leido.rechazadas, esEjemplo);
   // Otra carga de la org entró mientras se calculaban los hallazgos: se
   // recalcula una vez con el historial nuevo.
   if (error && /CAMBIO_CONCURRENTE/.test(error.message)) {
-    ({ error, fila } = await guardarConHallazgos(supabase, archivo, leido.filas, leido.rechazadas, esEjemplo));
+    ({ error, fila, pendientes } = await guardarConHallazgos(supabase, archivo, leido.filas, leido.rechazadas, esEjemplo));
   }
   if (error || !fila) {
     console.error("procesar: registrar_version falló", error);
@@ -103,6 +107,7 @@ async function procesar(archivo: string, texto: string, esEjemplo: boolean): Pro
     versionId: fila.version_id,
     identicaALaAnterior: fila.identical_to_previous,
     hallazgosNuevos: fila.findings_created,
+    pendientesAnteriores: pendientes,
     aceptadas: leido.filas.length,
     rechazadas: leido.rechazadas,
     columnasIgnoradas: leido.columnasIgnoradas,

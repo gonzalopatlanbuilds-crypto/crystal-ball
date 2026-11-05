@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import FormularioCarga from "@/components/FormularioCarga";
 import TablaRechazadas from "@/components/TablaRechazadas";
-import { fechaHora } from "@/lib/formato";
+import { fechaHora, ID_HALLAZGOS_CARGA } from "@/lib/formato";
 import type { FilaEvidencia, FilaRechazada } from "@/lib/csv";
 import ListaHallazgos, { type HallazgoFila } from "@/components/ListaHallazgos";
+import { pendientesQueAplican, type VersionHistorial } from "@/lib/validador";
 
 interface Version {
   id: string;
@@ -35,17 +36,43 @@ export default async function ValidadorPage() {
   }
   const correo = new Map((perfiles ?? []).map((p) => [p.id as string, p.email as string]));
   const ultima = versiones?.[0];
-  const { data: hallazgos, error: errorHallazgos } = ultima
-    ? await supabase
+  // Hallazgos de esta carga: los que creó (nuevos) y los pendientes de
+  // cargas anteriores que sus filas vuelven a producir (ya reportados; la
+  // huella evitó crearlos dos veces). Prueba de usuarios: pendientes escondidos.
+  let hallazgos: HallazgoFila[] = [];
+  let errorHallazgos: unknown = null;
+  if (ultima) {
+    const [historial, todos] = await Promise.all([
+      supabase
+        .from("evidence_versions")
+        .select("id, seq, uploaded_at, uploaded_by, source_filename, identical_to_previous, raw_rows")
+        .order("seq", { ascending: true })
+        .returns<VersionHistorial[]>(),
+      supabase
         .from("findings")
-        .select("id, type, sku, supplier, status, details")
-        .eq("evidence_version_id", ultima.id)
+        .select("id, type, sku, supplier, status, details, fingerprint, evidence_version_id")
         .order("type")
         .order("sku")
-        .returns<HallazgoFila[]>()
-    : { data: [] as HallazgoFila[], error: null };
-  if (errorHallazgos) {
-    console.error("ValidadorPage: no se pudieron leer los hallazgos", errorHallazgos);
+        .returns<(HallazgoFila & { fingerprint: string; evidence_version_id: string })[]>(),
+    ]);
+    errorHallazgos = historial.error ?? todos.error;
+    if (errorHallazgos) {
+      console.error("ValidadorPage: no se pudieron leer los hallazgos", errorHallazgos);
+    } else {
+      const filasHallazgos = todos.data ?? [];
+      const hist = (historial.data ?? []).map((v) => ({ ...v, seq: Number(v.seq) }));
+      const yo = hist.find((v) => v.id === ultima.id);
+      const previas = yo ? hist.filter((v) => v.seq < yo.seq) : [];
+      const yaReportadas = new Set(
+        yo ? pendientesQueAplican(previas, filasHallazgos, { source_filename: yo.source_filename, filas: yo.raw_rows }) : [],
+      );
+      hallazgos = [
+        ...filasHallazgos.filter((h) => h.evidence_version_id === ultima.id).map((h) => ({ ...h, etiqueta: "Nuevo" as const })),
+        ...filasHallazgos
+          .filter((h) => h.evidence_version_id !== ultima.id && yaReportadas.has(h.fingerprint))
+          .map((h) => ({ ...h, etiqueta: "Ya reportado" as const })),
+      ];
+    }
   }
 
   return (
@@ -62,7 +89,7 @@ export default async function ValidadorPage() {
       </section>
 
       {ultima && (
-        <section className="mt-8">
+        <section id={ID_HALLAZGOS_CARGA} className="mt-8 scroll-mt-4">
           <h2 className="text-lg font-semibold text-zinc-900">Hallazgos de esta carga</h2>
           <p className="mt-1 text-xs text-zinc-500">
             Última versión: {ultima.source_filename} · {fechaHora(ultima.uploaded_at)}
@@ -70,11 +97,11 @@ export default async function ValidadorPage() {
           <div className="mt-3">
             {errorHallazgos ? (
               <p className="text-sm text-red-700">No se pudieron cargar los hallazgos. Recarga la página.</p>
-            ) : !hallazgos?.length ? (
+            ) : !hallazgos.length ? (
               <p className="text-sm text-zinc-600">
                 {ultima.identical_to_previous
-                  ? "Esta carga es idéntica a la anterior: no generó hallazgos."
-                  : "Esta carga no generó hallazgos nuevos."}
+                  ? "Esta carga es idéntica a la anterior y no hay hallazgos pendientes."
+                  : "No hay hallazgos."}
               </p>
             ) : (
               <ListaHallazgos hallazgos={hallazgos} />

@@ -15,6 +15,7 @@ import {
   describirHallazgo,
   detectarHallazgos,
   ETIQUETA_ESTADO,
+  pendientesQueAplican,
   ETIQUETA_TIPO,
   reconstruir,
   type HallazgoGuardado,
@@ -250,6 +251,23 @@ const V2sin = ver("v2", 2, "2026-10-09T16:00:00Z", BASE.filter((f) => f.sku !== 
 const V3con = ver("v3", 3, "2026-10-10T16:00:00Z", BASE);
 hs = detectarHallazgos([V1, V2sin, V3con], [guardado(faltante)], carga(BASE.filter((f) => f.sku !== "SIM-6018")));
 check("missing_supplier: el SKU volvió (v3) y vuelve a faltar → hallazgo nuevo (otra huella)", hs.length === 1 && hs[0].type === "missing_supplier" && hs[0].fingerprint !== faltante.fingerprint, [hs, faltante.fingerprint]);
+
+// Pendientes de cargas anteriores que siguen aplicando (prueba de usuarios:
+// "no hay hallazgos nuevos" a secas escondía los pendientes).
+let pq = pendientesQueAplican([V1, V2], [guardado(conflicto)], carga(otroCambio));
+check("pendientes que aplican: v3 repite el conflicto PENDIENTE de v2 → esa huella (y no la nueva de SIM-6018)", pq.length === 1 && pq[0] === conflicto.fingerprint, pq);
+pq = pendientesQueAplican([V1, V2], [guardado(conflicto)], carga(pesoNuevo));
+check("pendientes que aplican: recarga idéntica de v2 (0 nuevos) → sigue mostrando el pendiente de v2", pq.join() === conflicto.fingerprint, pq);
+pq = pendientesQueAplican([V1, V2], [guardado(conflicto, "confirmed")], carga(pesoNuevo));
+check("pendientes que aplican: ya CONFIRMADO → no cuenta como pendiente", pq.length === 0, pq);
+pq = pendientesQueAplican([V1, V2], [guardado(conflicto, "discarded")], carga(pesoNuevo));
+check("pendientes que aplican: ya DESCARTADO → no cuenta", pq.length === 0, pq);
+pq = pendientesQueAplican([V1, V2], [guardado(conflicto)], carga(BASE));
+check("pendientes que aplican: la carga vuelve al valor de v1 (el conflicto ya no aplica) → 0", pq.length === 0, pq);
+pq = pendientesQueAplican([V1, V2sin], [guardado(faltante)], carga(BASE.filter((f) => f.sku !== "SIM-6018")));
+check("pendientes que aplican: el proveedor sigue faltando (misma huella, duplicado) → el faltante pendiente", pq.join() === faltante.fingerprint, pq);
+pq = pendientesQueAplican([V1], [], carga(BASE));
+check("pendientes que aplican: sin hallazgos guardados → 0", pq.length === 0, pq);
 
 // Determinismo
 const cargaDet = () => carga(cambiar(otroCambio, "SIM-2034", "Alfa", { evidence_folio: "FOL-SIM-0009", packaging_revision_date: "2026-10-20" }));
