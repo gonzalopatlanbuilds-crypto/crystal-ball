@@ -297,8 +297,9 @@ export function describirHallazgo(h: { type: TipoHallazgo; supplier: string | nu
   const d = h.details as Record<string, unknown>;
   switch (h.type) {
     case "missing_supplier": {
-      const u = d.ultima_aceptada as Procedencia;
-      return `Falta ${h.supplier} para este SKU: lo reportó en ${u.archivo} (fila ${u.fila}) y no aparece en ${d.archivo_actual as string}`;
+      // Lenguaje simple (prueba de usuarios, dolor #1): qué proveedor falta y
+      // en qué carga. El archivo y la fila de antes siguen en el detalle.
+      return `Falta ${h.supplier}. No vino en la carga ${d.archivo_actual as string}, pero sí en una carga de antes.`;
     }
     case "value_conflict":
       return (d.cambios as { campo: string; anterior: number | string; nuevo: number | string }[])

@@ -137,9 +137,13 @@ export default async function HallazgoPage({ params }: PageProps<"/validador/hal
         {h.type === "missing_supplier" && anterior && (
           <>
             <p>
-              Última evidencia aceptada de {h.supplier}: {anterior.weight_g} g, {anterior.material}, folio {anterior.evidence_folio}.
+              Falta {h.supplier} en la carga {String(d.archivo_actual)}.
             </p>
-            <p>No aparece en {String(d.archivo_actual)}.</p>
+            <p>
+              Antes sí vino, en la carga {anterior.archivo}
+              {anterior.uploaded_at ? ` del ${fechaHora(anterior.uploaded_at)}` : ""}. Sus datos de esa vez: {anterior.weight_g} g,{" "}
+              {anterior.material}, folio {anterior.evidence_folio}.
+            </p>
           </>
         )}
         {h.type === "possible_duplicate" && (

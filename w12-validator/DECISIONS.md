@@ -746,3 +746,18 @@ El caso 3 de la prueba de usuarios (scroll en móvil) queda **pendiente**
 por decisión de Gonzalo: no se tocó esta semana. El enlace "Ver hallazgos"
 del caso 2 lleva a la sección, pero no resuelve el caso 3 ni se midió en
 375/320 px.
+
+## 2026-11-05 — Prueba de usuarios: textos de "Sin dato de proveedor" en lenguaje simple
+
+**Dolor:** el texto del hallazgo de proveedor faltante decía «Falta X para
+este SKU: lo reportó en archivo.csv (fila N) y no aparece en otro.csv»: el
+nombre de archivo y la fila de antes iban en la línea de la lista, y no
+quedaba claro qué faltaba ni en qué carga.
+
+- Lista (`describirHallazgo` en `lib/validador.ts`): «Falta X. No vino en
+  la carga otro.csv, pero sí en una carga de antes.» El archivo y la fila
+  de antes siguen en el detalle.
+- Detalle (`app/validador/hallazgos/[id]/page.tsx`): primero «Falta X en la
+  carga otro.csv.», luego «Antes sí vino, en la carga archivo.csv del
+  <fecha>. Sus datos de esa vez: … g, material, folio …».
+- Solo textos; el motor y las huellas no cambian. `test:logica` 201/201.
