@@ -761,3 +761,32 @@ quedaba claro qué faltaba ni en qué carga.
   carga otro.csv.», luego «Antes sí vino, en la carga archivo.csv del
   <fecha>. Sus datos de esa vez: … g, material, folio …».
 - Solo textos; el motor y las huellas no cambian. `test:logica` 201/201.
+
+## 2026-11-05 — Casos 1 y 2 verificados en el navegador (local, sesión real)
+
+`next start` local (build limpio de 7ef9e76) contra la base real, con la
+cuenta dueña de la org de prueba 9A2-DPD (Playwright + Edge; Gonzalo
+eligió la cuenta de Google). Dos cargas, medidas en 1280 y 375 px:
+
+- **repro-1-problemas-conocidos.csv** (sin problemas nuevos): mensaje «No
+  hay hallazgos nuevos. Tienes 5 hallazgos pendientes de cargas
+  anteriores.» + «Ver hallazgos»; la sección muestra las 5 tarjetas con
+  «Ya reportado». Esta mañana, en producción, el mismo archivo decía «No
+  hay hallazgos nuevos.», con 0 tarjetas y sin enlace. El conflicto de
+  SIM-7733 (24.5 → 30 g) no aparece, porque esta carga trae 24.5 g:
+  correcto.
+- **repro-3-problema-nuevo-sim8890.csv** (repro-2 + SIM-8890 de 12.5 a
+  17.3 g; repro-2 ya se había subido, así que su cambio ya no es nuevo):
+  «1 hallazgo nuevo, pendiente de revisión humana. Además, tienes 6
+  hallazgos pendientes de cargas anteriores.»; 7 tarjetas, SIM-8890 con
+  «Nuevo» (primera) y 6 con «Ya reportado» (ahora incluye SIM-7733 → 30 g).
+- **Enlace:** en los 4 casos lleva a `#hallazgos-de-esta-carga` y el
+  título de la sección queda a 16 px del borde superior.
+- **375 px:** sin scroll horizontal; las etiquetas quedan dentro de su
+  tarjeta, en una línea cada una. Detalle menor sin corregir: cuando «Ya
+  reportado» baja a una segunda línea, queda ~4 px corrida por su `ml-1`.
+  El enlace mide 20 px de alto (área táctil chica), anotado junto con el
+  caso 3.
+- Consola: un solo error, el 404 de `/favicon.ico` (el proyecto no tiene
+  favicon; no viene de este cambio).
+- **No verificado:** producción (se verifica después del deploy) y 320 px.
