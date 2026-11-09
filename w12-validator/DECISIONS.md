@@ -790,3 +790,98 @@ eligió la cuenta de Google). Dos cargas, medidas en 1280 y 375 px:
 - Consola: un solo error, el 404 de `/favicon.ico` (el proyecto no tiene
   favicon; no viene de este cambio).
 - **No verificado:** producción (se verifica después del deploy) y 320 px.
+
+## 2026-11-08 — Semana 13: la única feature nueva es el registro de eventos
+
+Todo lo demás de la semana 13 (pendientes visibles con «Ya reportado»,
+enlace «Ver hallazgos», textos de «Sin dato de proveedor») es el arreglo de
+la prueba con usuarios reales, ya en producción (1977b78, 7ef9e76,
+f5ec23e). Esta semana solo se agrega el stack floor: un registro mínimo de
+eventos (docs/PACKET.md §3.4 y §9; docs/IMPLEMENTATION_PROMPT_w13.md, que
+Gonzalo pegó en el chat; no estaba en el repo ni en Descargas). Sin UI:
+solo instrumentación para el «long view» del PACKET (§7).
+
+- **Tabla `eventos`** (sql/schema.sql, sección «Semana 13»): id, org_id,
+  tipo, evidence_version_id, detalle (jsonb), creado_en.
+  `upload_seen_pending` guarda en `detalle` `{org_id, pendientes}` (lo que
+  pide el prompt). La base lo exige (`eventos_detalle_check`): pendientes
+  entero > 0, y el org_id del detalle igual al de la fila.
+  - `evidence_version_id` no viene en el prompt («or similar»). Se agregó
+    para cumplir «exactamente una fila» por carga: `unique
+    (evidence_version_id, tipo)`, y repetir la llamada no duplica.
+  - **Sin datos personales** (prompt): no se guarda ni persona, ni correo,
+    ni nombre de archivo. Una primera versión local guardaba `user_id`; se
+    quitó antes del push. El schema reemplaza la tabla si tiene esa forma
+    vieja (solo podía tener eventos de prueba).
+- **Append-only, RLS** (mismo patrón que evidence_versions): authenticated
+  lee solo los de su org (`my_org_id()`); anon sin privilegios;
+  authenticated sin insert/update/delete/truncate; el trigger
+  `evento_inmutable` bloquea editar, borrar y vaciar, también desde el SQL
+  Editor.
+- **Única puerta: `registrar_evento(tipo, versión, pendientes)`** (security
+  definer, como todas las escrituras del proyecto). La org sale de la
+  sesión. La versión tiene que ser de esa org y haberla subido esa persona,
+  porque el mensaje solo lo ve quien subió. La persona se revisa pero no se
+  guarda.
+- **Dónde se registra:** en la server action `procesar()`, justo después de
+  guardar la versión. El resultado que devuelve es exactamente lo que
+  muestra el mensaje: `pendientesAnteriores > 0`, en las dos ramas (carga
+  idéntica o no). La regla está en `lib/eventos.ts` (`eventoDeCarga`): 0
+  pendientes → null → no se llama al RPC. Si el registro falla, la carga ya
+  quedó guardada: solo `console.error`, sin error para la persona.
+  - Descartado: registrar desde el cliente al pintar el mensaje. Es una
+    llamada más y se pierde si el navegador la bloquea.
+  - No se registran las tarjetas «Ya reportado» al recargar la página: no
+    son el mensaje del prompt.
+- **Pruebas:**
+  - test:logica 205/205 (+4): con pendientes, 1, 0 e inválidos.
+  - test:schema 222/222 (+31): exactamente 1 fila con detalle correcto;
+    columnas sin datos personales; no duplica; 0, negativos y tipo
+    desconocido rechazados; versión de otra org o de otra persona
+    rechazada; sin org rechazado; cada org ve solo lo suyo; anon no lee,
+    no escribe y no ejecuta; insert/update/delete/truncate del cliente
+    rechazados; ni el superusuario edita ni borra; detalle inválido
+    rechazado por la base.
+  - scripts/probar-anon.sh incluye `eventos` y los 2 RPC nuevos.
+  - build limpio; lint y tsc limpios.
+- **No construido (prompt):** experimento de precio, los 2 detalles menores
+  de móvil, tipos de hallazgo o pantallas nuevas.
+- **No verificado aún:** el SQL corrido en Supabase; probar-anon contra el
+  proyecto real (aceptación 3, con la llave pública); y en el navegador una
+  carga con pendientes que deje su fila (aceptación 1) y otra sin
+  pendientes que no deje nada (aceptación 2).
+
+## 2026-11-08 — Registro de eventos verificado contra la base real
+
+Gonzalo corrió el SQL de la semana 13 en Supabase (csjpheiufscdjxtaelsh).
+Pruebas con `next start` local (build limpio de 6842856) contra esa base,
+en Chrome, con la cuenta dueña de la org de prueba 9A2-DPD. Antes de
+empezar, `eventos` tenía 0 filas.
+
+- **Aceptación 3 (anon), `scripts/probar-anon.sh` con la llave pública:**
+  `registrar_evento` → 401 permission denied; leer `eventos` → 42501;
+  escribir en `eventos` → 401. `evento_inmutable` → 404 (los triggers no
+  se exponen, igual que los demás). Todo lo anterior sigue denegado.
+- **Aceptación 1:** `w13-a-con-pendientes.csv` (idéntica a la última
+  versión, repro-1). Mensaje: «… idénticas a las de la versión anterior …
+  Tienes 5 hallazgos pendientes de cargas anteriores.» + «Ver hallazgos».
+  En la base: exactamente 1 fila, `tipo = upload_seen_pending`, `detalle =
+  {org_id, pendientes: 5}`, `evidence_version_id` = esa carga.
+- **Segunda carga con mensaje:** `w13-b` arreglaba 3 de los 5 problemas.
+  Mensaje: «Tienes 2 hallazgos pendientes…» → 1 fila más con `pendientes:
+  2`. Correcto: hubo mensaje, entonces hubo evento. (Ese CSV pretendía ser
+  el caso sin pendientes; quedaban el folio de SIM-1190 Alfa y el peso de
+  SIM-6018.)
+- **Aceptación 2:** `w13-c-sin-pendientes.csv` (b + folio de SIM-1190 Alfa
+  y SIM-6018 en 55 g). Mensaje: «No hay hallazgos.»; `eventos` siguió en 2
+  filas.
+- **Sesión real, ataques por la API** (token de la cuenta dueña): PATCH,
+  DELETE e INSERT directo en `eventos` → 403 (42501). Repetir
+  `registrar_evento` con la versión de la aceptación 1 → `false`, sin
+  fila nueva. Con 0 pendientes → 400 «Sin hallazgos pendientes no hay
+  evento.» Al final seguían las 2 filas, intactas.
+- **Aceptación 4 (otra org no ve los eventos):** cubierta por test:schema
+  (org C ve solo los suyos; sin org, 0 filas).
+- Las 3 cargas quedan en la org de prueba como versiones nuevas: es
+  append-only y no se borran. Los hallazgos siguen pendientes; las cargas
+  no deciden nada.
