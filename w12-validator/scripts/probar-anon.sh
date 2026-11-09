@@ -50,9 +50,12 @@ rpc validar_filas_evidencia '{"p_rows":[],"p_invalid":[]}'
 rpc huella_evidencia '{"p_rows":[]}'
 rpc evidencia_inmutable '{}'
 rpc evidencia_validar_insert '{}'
-for t in organizations profiles evidence_versions findings decisions lector_llamadas; do tabla $t; done
+rpc registrar_evento "{\"p_tipo\":\"upload_seen_pending\",\"p_evidence_version_id\":\"$Z\",\"p_pendientes\":1}"
+rpc evento_inmutable '{}'
+for t in organizations profiles evidence_versions findings decisions lector_llamadas eventos; do tabla $t; done
 escribir evidence_versions "{\"org_id\":\"$Z\",\"uploaded_by\":\"$Z\",\"source_filename\":\"x.csv\",\"raw_rows\":[],\"content_sha256\":\"$(printf 'a%.0s' $(seq 64))\"}"
 escribir decisions "{\"org_id\":\"$Z\",\"finding_id\":\"$Z\",\"decided_by\":\"$Z\",\"decision\":\"confirmed\",\"note\":\"x\"}"
+escribir eventos "{\"org_id\":\"$Z\",\"tipo\":\"upload_seen_pending\",\"evidence_version_id\":\"$Z\",\"detalle\":{\"pendientes\":1}}"
 printf '%-28s ' "anon cambia estado"
 curl -s -o "$T" -w '%{http_code} ' -X PATCH "$U/rest/v1/findings?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" \
   -H 'Content-Type: application/json' -d '{"status":"confirmed"}'

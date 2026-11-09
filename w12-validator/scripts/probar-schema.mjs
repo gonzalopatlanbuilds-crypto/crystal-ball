@@ -570,6 +570,84 @@ check("tras la Feature 5, anon sigue sin EXECUTE en ninguna función", r.length 
 r = (await db.query(`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`)).rows;
 check("tras la Feature 5, RLS sigue encendido en todas las tablas (incluida lector_llamadas)", r.length === 0, r);
 
+// ---------- Semana 13: registro de eventos (upload_seen_pending) ----------
+// A y B son de la org A; C es de otra org; K no tiene org.
+const versionDe = async (who) => (await db.query(`select id from evidence_versions where uploaded_by = $1 order by seq desc limit 1`, [U[who]])).rows[0]?.id;
+const vA = await versionDe("A"), vB = await versionDe("B"), vC = await versionDe("C");
+check("eventos: hay versiones de A, B y C para probar", !!vA && !!vB && !!vC, [vA, vB, vC]);
+const evento = (who, version, n, tipo = "upload_seen_pending") =>
+  as(who, `select registrar_evento($1, $2, $3) ok`, [tipo, version, n]);
+const eventosDb = async () => (await db.query(`select org_id, tipo, evidence_version_id, detalle from eventos order by id`)).rows;
+
+r = await evento("A", vA, 5);
+let ev = await eventosDb();
+check("eventos: A registra exactamente 1 upload_seen_pending, detalle = {org_id, pendientes: 5}", r.rows?.[0]?.ok === true && ev.length === 1 &&
+  ev[0].org_id === orgA && ev[0].tipo === "upload_seen_pending" && ev[0].evidence_version_id === vA &&
+  JSON.stringify(Object.keys(ev[0].detalle).sort()) === '["org_id","pendientes"]' && ev[0].detalle.org_id === orgA && ev[0].detalle.pendientes === 5, [r, ev]);
+// Sin datos personales: ninguna columna de persona, correo o archivo.
+const columnasEv = (await db.query(`select column_name from information_schema.columns where table_schema='public' and table_name='eventos' order by ordinal_position`)).rows.map((x) => x.column_name);
+check("eventos: columnas sin datos personales (id, org_id, tipo, evidence_version_id, detalle, creado_en)",
+  JSON.stringify(columnasEv) === JSON.stringify(["id", "org_id", "tipo", "evidence_version_id", "detalle", "creado_en"]), columnasEv);
+r = await evento("A", vA, 5);
+check("eventos: la misma carga no se registra dos veces", r.rows?.[0]?.ok === false && (await eventosDb()).length === 1, r);
+r = await evento("B", vB, 0);
+check("eventos: 0 pendientes → no se registra nada", /Sin hallazgos pendientes/.test(r.error ?? "") && (await eventosDb()).length === 1, r);
+r = await evento("B", vB, -3);
+check("eventos: pendientes negativos → rechazado", /Sin hallazgos pendientes/.test(r.error ?? ""), r);
+r = await evento("B", vB, 2, "otro_evento");
+check("eventos: tipo desconocido → rechazado", /Tipo de evento desconocido/.test(r.error ?? ""), r);
+r = await evento("A", vC, 3);
+check("ATAQUE: registrar un evento con una versión de otra org → rechazado", /Versión no encontrada/.test(r.error ?? ""), r);
+r = await evento("A", vB, 3);
+check("ATAQUE: registrar un evento con la carga de otra persona de mi org → rechazado", /Versión no encontrada/.test(r.error ?? ""), r);
+r = await evento("K", vA, 3);
+check("eventos: sin organización → rechazado", /Se requiere sesión y organización/.test(r.error ?? ""), r);
+r = await evento("C", vC, 2);
+check("eventos: C registra el suyo en su org", r.rows?.[0]?.ok === true, r);
+
+// Lectura: cada org solo ve lo suyo; anon nada.
+r = await as("B", `select org_id, evidence_version_id from eventos`);
+check("eventos: B (misma org que A) ve el evento de su org y solo ese", r.rows?.length === 1 && r.rows[0].evidence_version_id === vA, r);
+r = await as("C", `select org_id from eventos`);
+check("eventos: la org C no ve eventos de la org A", r.rows?.length === 1 && r.rows[0].org_id === orgC, r);
+r = await as("K", `select * from eventos`);
+check("eventos: sin organización no ve ningún evento", r.rows?.length === 0, r);
+r = await as("anon", `select * from eventos`);
+check("eventos: anon no lee", negado(r), r);
+r = await as("anon", `select registrar_evento('upload_seen_pending', $1, 1)`, [vA]);
+check("eventos: anon no ejecuta registrar_evento", negado(r), r);
+r = await as("anon", `insert into eventos (org_id, tipo, evidence_version_id, detalle) values ($1, 'upload_seen_pending', $2, $3)`, [orgA, vB, { org_id: orgA, pendientes: 1 }]);
+check("eventos: anon no escribe", negado(r), r);
+
+// Escritura directa del cliente: ni insert, ni update, ni delete, ni truncate.
+r = await as("B", `insert into eventos (org_id, tipo, evidence_version_id, detalle) values ($1, 'upload_seen_pending', $2, $3)`, [orgA, vB, { org_id: orgA, pendientes: 9 }]);
+check("ATAQUE: insert directo del cliente → rechazado", negado(r), r);
+r = await as("A", `update eventos set detalle = '{"pendientes": 99}' returning id`);
+check("ATAQUE: A edita su evento → rechazado", negado(r), r);
+r = await as("A", `delete from eventos returning id`);
+check("ATAQUE: A borra su evento → rechazado", negado(r), r);
+r = await as("A", `truncate eventos`);
+check("ATAQUE: A vacía la tabla → rechazado", negado(r), r);
+// Append-only también para el SQL Editor / service role.
+r = await intentaSuper(`update eventos set detalle = '{"pendientes": 99}'`);
+check("eventos: ni el superusuario edita (append-only)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`delete from eventos`);
+check("eventos: ni el superusuario borra (append-only)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`truncate eventos`);
+check("eventos: ni el superusuario vacía la tabla (append-only)", /append-only/.test(r.error ?? ""), r);
+ev = await eventosDb();
+check("eventos: tras los ataques siguen los 2 eventos, intactos", ev.length === 2 && ev[0].detalle.pendientes === 5, ev);
+// La base rechaza un detalle sin pendientes válidos aunque se inserte por fuera del RPC.
+for (const [nombre, det] of [["pendientes 0", { org_id: orgA, pendientes: 0 }], ["pendientes decimal", { org_id: orgA, pendientes: 1.5 }],
+  ["sin pendientes", { org_id: orgA }], ["org_id de otra org", { org_id: orgC, pendientes: 2 }]]) {
+  r = await intentaSuper(`insert into eventos (org_id, tipo, evidence_version_id, detalle) values ($1, 'upload_seen_pending', $2, $3)`, [orgA, vB, det]);
+  check(`eventos: detalle con ${nombre} → rechazado por la base`, /eventos_detalle_check/.test(r.error ?? ""), r);
+}
+r = await ejecutablesPorAnon();
+check("tras eventos, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
+r = (await db.query(`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`)).rows;
+check("tras eventos, RLS sigue encendido en todas las tablas (incluida eventos)", r.length === 0, r);
+
 // ---------- Rutas por HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
 if (BASE) {

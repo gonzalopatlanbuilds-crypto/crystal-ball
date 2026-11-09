@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { excedeTamano, hoyMexico, leerCsv, MENSAJE_TAMANO, validarArchivo, type FilaRechazada } from "@/lib/csv";
 import { CSV_EJEMPLO, NOMBRE_EJEMPLO } from "@/lib/ejemplo";
+import { eventoDeCarga } from "@/lib/eventos";
 import { detectarHallazgos, pendientesQueAplican, type HallazgoGuardado, type VersionHistorial } from "@/lib/validador";
 
 export type CargaState =
@@ -99,6 +100,15 @@ async function procesar(archivo: string, texto: string, esEjemplo: boolean): Pro
   if (error || !fila) {
     console.error("procesar: registrar_version falló", error);
     return { error: "No se pudo guardar la versión. Intenta de nuevo." };
+  }
+
+  // Registro de eventos: el resultado que se devuelve abajo muestra el
+  // mensaje de pendientes justo cuando pendientes > 0. Si el registro falla
+  // la carga ya se guardó: se anota en el log y no se le muestra error.
+  const evento = eventoDeCarga(fila.version_id, pendientes);
+  if (evento) {
+    const { error: errorEvento } = await supabase.rpc("registrar_evento", evento);
+    if (errorEvento) console.error("procesar: registrar_evento falló", errorEvento);
   }
 
   revalidatePath("/validador");

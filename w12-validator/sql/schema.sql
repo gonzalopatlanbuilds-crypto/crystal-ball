@@ -799,3 +799,127 @@ $$;
 
 revoke all on function public.registrar_llamada_lector() from public, anon;
 grant execute on function public.registrar_llamada_lector() to authenticated;
+
+-- ============================================================
+-- Semana 13: registro de eventos (stack floor: instrumentación mínima).
+-- Una fila cada vez que alguien ve el mensaje "tienes N hallazgos
+-- pendientes de cargas anteriores" tras una carga (upload_seen_pending).
+-- Sin UI esta semana. Sin datos personales: ni persona, ni correo, ni
+-- nombres de archivo; solo la org y el número de pendientes.
+-- Append-only: nadie la edita ni la borra, tampoco el SQL Editor (mismo
+-- patrón que evidence_versions). El cliente solo lee la de su org; la
+-- única puerta de escritura es registrar_evento() (security definer).
+-- ============================================================
+
+-- Una primera versión local (nunca corrida en producción, salvo que se
+-- haya corrido el 2026-11-08 antes de este cambio) guardaba user_id: si la
+-- tabla tiene esa forma vieja se reemplaza. Solo podía tener eventos de
+-- prueba.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'eventos' and column_name = 'user_id') then
+    drop table public.eventos;
+  end if;
+end;
+$$;
+
+create table if not exists public.eventos (
+  id bigint generated always as identity primary key,
+  org_id uuid not null references public.organizations (id),
+  tipo text not null check (tipo in ('upload_seen_pending')),
+  -- La carga que mostró el mensaje: un evento por carga (unique abajo).
+  evidence_version_id uuid not null references public.evidence_versions (id),
+  -- upload_seen_pending: {"org_id": "...", "pendientes": N}, N > 0. Sin
+  -- pendientes no hay mensaje, y sin mensaje no hay evento.
+  detalle jsonb not null default '{}'::jsonb constraint eventos_detalle_check check (
+    jsonb_typeof(detalle) = 'object'
+    and (tipo <> 'upload_seen_pending' or (
+      detalle ? 'pendientes'
+      and jsonb_typeof(detalle -> 'pendientes') = 'number'
+      and (detalle ->> 'pendientes')::numeric > 0
+      and (detalle ->> 'pendientes')::numeric = trunc((detalle ->> 'pendientes')::numeric)
+      and detalle ->> 'org_id' = org_id::text
+    ))
+  ),
+  creado_en timestamptz not null default now(),
+  unique (evidence_version_id, tipo)
+);
+
+alter table public.eventos enable row level security;
+
+create index if not exists eventos_org_fecha on public.eventos (org_id, creado_en);
+
+drop policy if exists "members select own org eventos" on public.eventos;
+create policy "members select own org eventos"
+  on public.eventos for select
+  to authenticated
+  using (org_id = public.my_org_id());
+
+revoke all on public.eventos from anon;
+revoke insert, update, delete, truncate on public.eventos from authenticated;
+
+create or replace function public.evento_inmutable()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'eventos es append-only: un evento no se edita ni se borra.'
+    using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.evento_inmutable() from public, anon, authenticated;
+
+drop trigger if exists eventos_sin_update_delete on public.eventos;
+create trigger eventos_sin_update_delete
+  before update or delete on public.eventos
+  for each row execute function public.evento_inmutable();
+
+drop trigger if exists eventos_sin_truncate on public.eventos;
+create trigger eventos_sin_truncate
+  before truncate on public.eventos
+  for each statement execute function public.evento_inmutable();
+
+-- Registra el evento de una carga propia. La versión tiene que ser de la
+-- org de la sesión y haberla subido esa misma persona (el mensaje solo lo
+-- ve quien subió); la persona se revisa pero no se guarda. true si se
+-- registró, false si esa carga ya tenía su evento.
+create or replace function public.registrar_evento(p_tipo text, p_evidence_version_id uuid, p_pendientes integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.my_org_id();
+  v_id bigint;
+begin
+  if auth.uid() is null or v_org is null then
+    raise exception 'Se requiere sesión y organización.' using errcode = 'P0001';
+  end if;
+  if p_tipo is null or p_tipo not in ('upload_seen_pending') then
+    raise exception 'Tipo de evento desconocido.' using errcode = 'P0001';
+  end if;
+  if p_pendientes is null or p_pendientes <= 0 then
+    raise exception 'Sin hallazgos pendientes no hay evento.' using errcode = 'P0001';
+  end if;
+  perform 1 from public.evidence_versions v
+    where v.id = p_evidence_version_id and v.org_id = v_org and v.uploaded_by = auth.uid();
+  if not found then
+    -- Mismo mensaje si no existe, es de otra org o la subió otra persona.
+    raise exception 'Versión no encontrada.' using errcode = 'P0001';
+  end if;
+
+  insert into public.eventos (org_id, tipo, evidence_version_id, detalle)
+  values (v_org, p_tipo, p_evidence_version_id, jsonb_build_object('org_id', v_org, 'pendientes', p_pendientes))
+  on conflict (evidence_version_id, tipo) do nothing
+  returning id into v_id;
+
+  return v_id is not null;
+end;
+$$;
+
+revoke all on function public.registrar_evento(text, uuid, integer) from public, anon;
+grant execute on function public.registrar_evento(text, uuid, integer) to authenticated;

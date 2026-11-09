@@ -10,6 +10,7 @@ import { chequeoPorReglas, UMBRAL_PCT } from "../lib/chequeo-reglas.ts";
 import { ESCENARIOS } from "./escenarios-lector.ts";
 import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
+import { eventoDeCarga } from "../lib/eventos.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
   describirHallazgo,
@@ -430,6 +431,15 @@ check(`regla: marca peso que cambia más de ${UMBRAL_PCT}% (decimal, unidades, +
 check("regla: no marca +9% ni +1%", !regla("rediseno_peso") && !regla("redondeo"));
 check("regla: no dice nada de material, folios ni fechas", !regla("sinonimo") && !regla("material_real") && !regla("folio_copiado") && !regla("revision_tardia"));
 check("regla: la inyección (+20% exacto) no se marca (más de 20, no igual)", !regla("inyeccion"));
+
+// ---------- Semana 13: registro de eventos ----------
+check("evento: con pendientes se registra upload_seen_pending con la versión y el número", (() => {
+  const e = eventoDeCarga("v-1", 5);
+  return e?.p_tipo === "upload_seen_pending" && e.p_evidence_version_id === "v-1" && e.p_pendientes === 5;
+})());
+check("evento: 1 pendiente también se registra", eventoDeCarga("v-1", 1)?.p_pendientes === 1);
+check("evento: sin pendientes no se registra nada", eventoDeCarga("v-1", 0) === null);
+check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, NaN, 2.5].every((n) => eventoDeCarga("v-1", n) === null));
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);
