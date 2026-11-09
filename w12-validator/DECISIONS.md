@@ -885,3 +885,50 @@ empezar, `eventos` tenía 0 filas.
 - Las 3 cargas quedan en la org de prueba como versiones nuevas: es
   append-only y no se borran. Los hallazgos siguen pendientes; las cargas
   no deciden nada.
+
+## 2026-11-08 — Registro de eventos verificado en producción
+
+Después del push de 6842856 + 6de8d42:
+
+- **Vercel:** el deploy de w12-validator para 6de8d42 terminó en
+  «Deployment has completed» (success, 02:02:16 UTC;
+  vercel.com/gonzabuilds/w12-validator/9CtHdcvmdXMufeC4UukE2zd5oQV6).
+- **`npm run verificar:deploy -- https://www.packvalidator.online`:** 10 OK,
+  0 FALLA.
+- **Carga en producción** (www.packvalidator.online, cuenta dueña de
+  9A2-DPD), `w13-a-con-pendientes.csv`. La versión anterior era `w13-c`,
+  así que esta vez el mensaje dijo: «1 hallazgo nuevo, pendiente de
+  revisión humana. Además, tienes 4 hallazgos pendientes de cargas
+  anteriores.» En `eventos` apareció la fila id 4: `upload_seen_pending`,
+  versión 99aca20a (esa carga), `detalle = {org_id, pendientes: 4}`. El
+  número coincide con el mensaje.
+
+**Hueco en los ids (1, 2, 4).** Gonzalo lo revisó en el SQL Editor de
+Supabase, sin RLS:
+
+```sql
+select id, org_id, creado_en from eventos order by id;
+```
+
+Resultado: solo existen los ids 1, 2 y 4, los tres de la misma org
+(c5e9c18b…). El id 3 no existe en ninguna parte, así que se descarta que
+sea una fila de otra org que la sesión no veía.
+
+**Explicación, confirmada.** En Postgres, el valor de una columna
+`generated always as identity` se toma de la secuencia antes de revisar la
+fila. Un insert que no guarda nada igual gasta su número.
+
+- Reproducción en PGlite: insertar a y b, luego un duplicado con `on
+  conflict do nothing` (0 filas), luego un insert que falla el `check`,
+  luego d. Los ids finales son 1, 2, 5.
+- En la base real, entre el id 2 (01:51:23 UTC) y el id 4 (02:03:10 UTC),
+  lo único que llegó al `insert` de `registrar_evento` fue la prueba de
+  duplicado (repetir la versión de la aceptación 1). Devolvió `false` sin
+  fila, y es la que gastó el 3.
+- Las otras pruebas de esa ventana no llegan al insert:
+  - el RPC con 0 pendientes lanza la excepción antes;
+  - el INSERT, PATCH y DELETE directos se rechazan por privilegios (403)
+    antes de ejecutarse;
+  - la carga `w13-c` no llamó al RPC (0 pendientes).
+- No es un bug: los ids no son un contador de eventos. Para contar eventos
+  se usa `count(*)`, nunca `max(id)`.
