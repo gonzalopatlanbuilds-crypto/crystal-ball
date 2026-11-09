@@ -1,37 +1,34 @@
-# PACKET - Week 12 - Validator (Core Build)
+# PACKET - Week 13 - Validator (Real Humans)
 
 Gonzalo Patlan - Venture: Validator - packvalidator.online
-Written before the rebuild starts, aligned with docs/CHARTER.md, docs/PERSONAS.md, and the conditions in BLUEPRINT_GonzaloPatlan_Week12.pdf (individual Team Bending, team did not respond - see that document's note).
-
-> All suppliers, SKUs and uploaded files in this packet and in the app are invented and labeled as such.
+This is an iteration, not a new product: the problem below is reframed by five real-user sessions (Layer 2 testing), not researched from a library. Aligned with CHARTER.md, PERSONAS.md and BLUEPRINT_W12_Team8.pdf (conditions still in force for Weeks 12-17).
 
 ## 1. Problem in my words
 
-A small or mid-size Mexican producer under the new Circular Economy Law has to reconcile packaging evidence from a handful of suppliers before every compliance cycle. Today that means emails and WhatsApp, compared by eye, with no record of what changed or why. An enterprise tool (Specright-class) exists, priced by quote (no public price; see §6, unverified) - out of reach for a company like mine. Validator makes that evidence traceable enough for a human to decide, without ever claiming the company complies.
+Five real users (3 strangers, 1 referral, 1 known - documented in REAL_USERS_REPORT_GonzaloPatlan_Week13.pdf) confirmed something I hadn't measured: when a new upload only repeats issues already pending (fingerprint-deduplicated, including an identical re-upload), the home screen said "No hay hallazgos nuevos" and showed zero cards - even when real, unresolved findings existed. Two users named this confusion directly ("me costo encontrar el hallazgo especifico", "un poco confuso el saber que documento subir" on an adjacent screen); a Playwright measurement confirmed it reproducibly in production. A founder reading a "no issues" message when 5 issues are actually pending is the opposite of what Validator exists to prevent.
 
 ## 2. Exact user
 
-Persona 1 from docs/PERSONAS.md: Gonzalo, founder of Concept G, reconciling 1-3 packaging suppliers by email/WhatsApp, with no dedicated compliance staff. He is both the uploader and the reviewer - Condition 2 of the Blueprint accepts this as a real limit for a single-founder user, not something the product pretends away.
+Same two personas as Week 12 (PERSONAS.md): Gonzalo (Concept G) and Renata (synthetic, cosmetics). This week adds real evidence from a third profile outside both: a delivery lead at an unnamed SME, cold-contacted, in-ICP, who is the user who reported and later confirmed the fix (REAL_USERS_REPORT, section 5).
 
 ## 3. Success definition
 
-Before the module closes, all of this works at packvalidator.online:
+Before the module closes, all of this works at packvalidator.online (already shipped and verified in production - see DECISIONS.md, commits 1977b78 and 7ef9e76):
 
-1. The founder signs in with Google, uploads a supplier CSV, and it becomes a new, immutable version. Nothing stored is overwritten.
-2. The engine detects, deterministically: a missing supplier, a conflicting value between versions, a packaging revision dated after the accepted evidence, and a reused evidence folio (possible duplicate).
-3. Every finding starts pending and only changes state through a human decision with a required note.
-4. An AI reader may add a labeled, unvalidated observation; it never decides and the server rejects any output with a verdict word or an invented number.
-5. No screen, anywhere in the product, claims compliance, recycling, or environmental recovery - the shadow clause from Condition 3 of the Blueprint.
+1. When a carga produces no new findings but pending findings from earlier cargas still apply, the home screen shows them, labeled "Ya reportado", instead of implying nothing is wrong.
+2. The message states the real count of pending findings and links directly to them ("Ver hallazgos").
+3. The worst-readability finding text ("Sin dato de proveedor") is rewritten in plain language, measured before/after with the same method (Fernandez-Huerta: card 41.0 -> 66.9, detail 33.7 -> 77.4).
+4. A simple event log records when a user sees a "pending findings" message, as the stack-floor addition for this week.
 
 ## 4. Mockup (2 screens)
 
-**Screen 1 - public home** (`assets/w12-mockup-home.png`)
+**Before** (`assets/w13-mockup-antes.png`): the misleading message, in production until this week's fix.
 
-![Home](../assets/w12-mockup-home.png){ width=45% }
+![Before](../assets/w13-mockup-antes.png){ width=40% }
 
-**Screen 2 - findings and review** (`assets/w12-mockup-hallazgos.png`)
+**After** (`assets/w13-mockup-despues.png`): what real users now see, verified in production.
 
-![Findings and review](../assets/w12-mockup-hallazgos.png){ width=45% }
+![After](../assets/w13-mockup-despues.png){ width=40% }
 
 ## 5. Flow
 
@@ -39,95 +36,72 @@ Before the module closes, all of this works at packvalidator.online:
 
 ```mermaid
 flowchart TD
-  A["Founder signs in with Google"] --> B["Uploads supplier CSV"]
-  B --> C{"Server validates file"}
-  C -- "invalid" --> B1["Error shown, nothing stored"]
-  B1 --> B
-  C -- "valid" --> D["Stored as new version, nothing overwritten"]
-  D --> E["Deterministic diff vs last accepted version"]
-  E --> F["Findings: missing supplier, conflicting value, late revision, possible duplicate"]
-  F --> G["AI reader flags free-text anomalies, unvalidated"]
-  G --> H["Founder (as reviewer) opens a finding"]
-  H --> I{"Decision"}
-  I -- "confirm, with note" --> J["Finding: confirmed"]
-  I -- "discard, with note" --> K["Finding: discarded"]
-  J --> L["Decision logged, never deleted"]
-  K --> L
+  A["Founder uploads a CSV"] --> B["Engine computes findings for this upload"]
+  B --> C{"Any brand-new findings?"}
+  C -- "no" --> D["Check: any PENDING findings still apply (same fingerprint)?"]
+  D -- "yes" --> E["Message: 'No hay hallazgos nuevos. Tienes N pendientes.' + link"]
+  D -- "no" --> F["Message: 'No hay hallazgos.'"]
+  C -- "yes" --> G["Message shows new count, plus pending count if any"]
+  E --> H["Home shows pending findings, labeled 'Ya reportado'"]
+  G --> I["Home shows new findings labeled 'Nuevo', pending labeled 'Ya reportado'"]
+  H --> J["Event logged: upload_seen_pending"]
+  I --> J
 ```
 
 ### Swimlane
 
 ```mermaid
 flowchart LR
-  subgraph Operator_founder
-    O1["Signs in, uploads supplier CSV"]
+  subgraph Founder
+    F1["Uploads a CSV"]
+    F2["Sees message with link, pending findings labeled 'Ya reportado'"]
   end
   subgraph System
-    S1["Validates file, parses rows"]
-    S2["Stores new version, nothing overwritten"]
-    S3["Diffs vs last accepted version"]
+    S1["Computes findings: new vs. already-pending (same fingerprint)"]
+    S2["Builds the message: new + pending counts"]
   end
-  subgraph AI_reader
-    A1["Flags unlabeled anomalies, unvalidated"]
+  subgraph Analytics
+    A1["Logs event: upload_seen_pending"]
   end
-  subgraph Reviewer_same_person_S12
-    R1["Sees finding in review queue"]
-    R2["Confirms or discards, required note"]
-  end
-  O1 --> S1 --> S2 --> S3 --> A1
-  S3 --> R1
-  A1 --> R1
-  R1 --> R2
+  F1 --> S1 --> S2 --> F2
+  S2 --> A1
 ```
 
-(Image version for the PDF: `assets/w12-swimlane.png`. Note: Operator and Reviewer are the same person this week, per Blueprint Condition 2 - the diagram keeps them as separate lanes because the roles, not the people, are what the product must keep distinct.)
+(Image version for the PDF: `assets/w13-swimlane.png`. The founder is both uploader and reviewer this week, per the Charter's single-founder limit.)
 
 ## 6. Benchmark (global to local)
 
-- **Best existing solution on Earth for this is:** Specright, Recyda and Lorax - enterprise packaging-data and EPR-reporting platforms. Specright's pricing is estimated around US$60,000/year per company (unverified - must be confirmed before use in any public material, per Blueprint Condition 1).
-- **Mine differs or localizes by:** being a narrow, auditable reconciliation layer - not a full EPR filing suite - priced for a producer who cannot afford the enterprise tier, with provenance and a human-decision log as the entire product, not one feature among many.
+- **Best existing solution on Earth for this is:** Sentry's issue grouping and embedded User Feedback widget - it groups repeated events into one issue instead of re-alerting, and collects in-context feedback tagged for triage.
+- **Mine differs or localizes by:** Sentry's grouping hides repetition from the user entirely (by design, for engineers who don't want noise); Validator's users explicitly told us the opposite problem - they needed repetition to stay *visible*, labeled, not hidden, because the audience is a non-technical founder who needs to know unresolved work still exists, not an engineer triaging alert volume.
 
 ## 7. Long view (3 years)
 
-If this slice works, Validator becomes the default evidence layer small and mid-size Mexican producers use before any packaging-compliance claim: every value traceable, every decision logged, never a compliance seal. In three years either real producers like Concept G and Persona 2 (Renata, docs/PERSONAS.md) pay for this because it survives an audit, or the unverified 10:1 case against Specright turns out not to hold - and the product says so honestly rather than hiding it.
+If this slice holds, Validator's event log becomes the backbone of a real usage-pattern dataset: which finding types get ignored longest, which messages get clicked, which users return after a specific fix - informing both the product and, eventually, a defensible answer to the still-unverified willingness-to-pay question (Brief, Week 13, section 4) that user interviews alone can't settle.
 
 ## 8. Scope cut (what I am NOT building)
 
-- A multi-person approval workflow - Condition 2 accepts a single founder as both uploader and reviewer this week; true separation of duties is a later requirement, not assumed to exist.
-- Any EPR filing, regulator submission, or legal certification.
-- Imports, exceptions, or multi-cycle reconciliation management (that was a teammate's scope in Week 11, not mine).
-- Any claim of recycling, environmental recovery, or compliance - anywhere, ever (the shadow clause).
-- Real supplier, producer, or packaging data.
+- The mobile label-alignment and small-touch-target issues found this week (documented in DECISIONS.md, not fixed - low severity, mobile-only).
+- Any price validation experiment (the #1 real threat per this week's Brief) - deliberately deferred to next week, not hidden.
+- Multi-person review workflows (Blueprint Condition 2, unchanged).
+- Any EPR filing, compliance certification, or recycling claim (shadow clause, unchanged).
 
 ## 9. Architecture and stack
 
 | Layer | Choice | Why |
 |---|---|---|
-| App | Next.js (App Router, TypeScript) on Vercel | Same pattern as previous weeks |
-| Domain | packvalidator.online, bought with the venture's own Gmail | Venture rule: the real domain is the URL of record |
-| Data and auth | Supabase Postgres + Auth with Google | Security floor: auth for anything personal |
-| Access control | Row Level Security on every table, `my_org_id()` (security definer), `revoke execute ... from public, anon` | Carried forward from Week 11 |
-| Evidence store | `evidence_versions`, append-only | Nothing overwritten (CHARTER Principle 2) |
-| Findings engine | `lib/validador.ts`, pure deterministic functions | The AI never decides a finding |
-| AI reader | LLM, server-only; key in Vercel environment variables | Flags anomalies, labeled unvalidated |
-| Guard | Server rejects AI output with verdict words or invented numbers | CHARTER Principle 3 |
-| Review log | `decisions`, append-only | A correction is a new row, not an edit |
-| Tests | `npm run test:logica`, `npm run test:schema` | Same as Week 11 |
+| App | Next.js on Vercel, existing w12-validator project | Iteration, not a new app |
+| Findings engine | `lib/validador.ts`, extended with `pendientesQueAplican()` | Reuses the existing fingerprint/dedup logic; no new engine |
+| Event log (new this week) | Minimal table, append-only, one row per message shown | Stack-floor requirement: analytics/feedback mechanism |
+| Tests | `npm run test:logica` (201/201, +7 cases), `npm run test:schema` (191/191) | Same as previous weeks |
 
 ## 10. Test plan
 
-**Mechanical pass** (find at least one real bug, fix, redeploy):
+**Mechanical pass, already run and documented (DECISIONS.md):**
+1. Upload a CSV whose issues are all already pending: home shows them labeled "Ya reportado", with the correct count in the message. Verified in production (before: 0 cards; after: 5 cards).
+2. Upload a CSV with one genuinely new issue plus pending ones: both labels ("Nuevo" and "Ya reportado") appear correctly, counts match.
+3. Mobile (375px): no horizontal scroll, labels stay inside their card. Two minor issues found and logged as not-fixed-this-week (label shifts 4px on line wrap; link touch target is 20px, below recommended minimum).
+4. Readability before/after on the worst-scoring finding text, same method, same real data.
 
-1. Upload a CSV missing a known supplier: "missing supplier" finding appears with the exact SKU.
-2. Upload a version changing one SKU's material or weight: "conflicting value" finding shows both values and both provenances.
-3. Upload a CSV with a packaging-revision date after the last accepted evidence: "late revision" finding appears.
-4. Upload a CSV reusing a folio already used: "possible duplicate, unverified" - never "verified."
-5. Try to confirm or discard with no note: rejected by the server.
-6. Try to edit a past decision: impossible; only a new decision row, with the old one still visible.
-7. AI guard: output with a verdict word or an invented number never reaches the screen.
-8. RLS: `anon` cannot read any table; a second organization's data is never visible to this one.
-9. Re-upload the same unchanged file: zero new findings, and the system says so.
+**Persona test (Layer 1):** still pending this week - to be run on the updated screens with Gonzalo and Renata personas (PERSONAS.md).
 
-**Persona test (Layer 1):** both personas from docs/PERSONAS.md walk the two screens from screenshots. Persona 1 (myself, Concept G) is the realistic near-term test; Persona 2 (Renata, synthetic, larger cosmetics producer) stress-tests whether the product still makes sense for someone managing more suppliers than I do. Documented in PERSONA_GonzaloPatlan_Week12.pdf.
-
-**Blueprint conditions mapping:** Condition 1 (verify public figures) - not yet done, flagged honestly in this packet and in CHARTER. Condition 2 (single-reviewer limit) - test 6 and the Scope cut. Condition 3, shadow clause (never a compliance/recycling seal) - present on every screen, test plan has no case where the product states compliance. Condition 4 (must work for a single-founder user) - the entire flow above requires no second person.
+**Real humans (Layer 2), already complete:** 5 sessions, pain ranked and argued with the model, pain #1 fixed and verified in production, one user confirmed he would return after the fix - full detail in REAL_USERS_REPORT_GonzaloPatlan_Week13.pdf and BUILDCHAT_GonzaloPatlan_Week13.pdf.
