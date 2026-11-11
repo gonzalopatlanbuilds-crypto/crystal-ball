@@ -1,34 +1,36 @@
-# PACKET - Week 13 - Validator (Real Humans)
+# PACKET - Week 14 - Validator (Pricing)
 
 Gonzalo Patlan - Venture: Validator - packvalidator.online
-This is an iteration, not a new product: the problem below is reframed by five real-user sessions (Layer 2 testing), not researched from a library. Aligned with CHARTER.md, PERSONAS.md and BLUEPRINT_W12_Team8.pdf (conditions still in force for Weeks 12-17).
+Declaration (BLUEPRINT_14_team_8.pdf, Condition #2): "Build Validator's pricing view with direct, relayed and paid evidence states." Honors Conditions 1, 2, 3, 4 and the Shadow Clause (5).
+
+> All suppliers, SKUs and uploaded files remain invented and labeled. Pricing evidence (amounts, who said them) is real, from my own Week 13/14 user sessions, and is labeled by its evidence state - not presented as a completed sale.
 
 ## 1. Problem in my words
 
-Five real users (3 strangers, 1 referral, 1 known - documented in REAL_USERS_REPORT_GonzaloPatlan_Week13.pdf) confirmed something I hadn't measured: when a new upload only repeats issues already pending (fingerprint-deduplicated, including an identical re-upload), the home screen said "No hay hallazgos nuevos" and showed zero cards - even when real, unresolved findings existed. Two users named this confusion directly ("me costo encontrar el hallazgo especifico", "un poco confuso el saber que documento subir" on an adjacent screen); a Playwright measurement confirmed it reproducibly in production. A founder reading a "no issues" message when 5 issues are actually pending is the opposite of what Validator exists to prevent.
+My venture had a price-shaped hole: no public /pricing page, no 10:1 memo, and - this is the real problem this week - three different price numbers from the same user ($3,500 unanchored, $4,000 his stated ceiling, $4,500 relayed from his company's actual decision-maker), with zero real payments. If I publish one of those numbers as if it were "the price, validated," I'd be doing exactly what the shadow clause of this week's chapter warns against: letting evidence quietly upgrade itself. The fix is a pricing view that keeps each number labeled by how strong it actually is.
 
 ## 2. Exact user
 
-Same two personas as Week 12 (PERSONAS.md): Gonzalo (Concept G) and Renata (synthetic, cosmetics). This week adds real evidence from a third profile outside both: a delivery lead at an unnamed SME, cold-contacted, in-ICP, who is the user who reported and later confirmed the fix (REAL_USERS_REPORT, section 5).
+Same as prior weeks, refined by this week's evidence: the Pro tier targets a mid-size producer (~45 employees, 4+ packaging suppliers) - the only segment with real pricing evidence so far. The micro-SME (1-3 people, my original Charter description, e.g. Concept G) is kept as a lower, unproven tier, not discarded.
 
 ## 3. Success definition
 
-Before the module closes, all of this works at packvalidator.online (already shipped and verified in production - see DECISIONS.md, commits 1977b78 and 7ef9e76):
+Before the module closes, all of this works at packvalidator.online:
 
-1. When a carga produces no new findings but pending findings from earlier cargas still apply, the home screen shows them, labeled "Ya reportado", instead of implying nothing is wrong.
-2. The message states the real count of pending findings and links directly to them ("Ver hallazgos").
-3. The worst-readability finding text ("Sin dato de proveedor") is rewritten in plain language, measured before/after with the same method (Fernandez-Huerta: card 41.0 -> 66.9, detail 33.7 -> 77.4).
-4. A simple event log records when a user sees a "pending findings" message, as the stack-floor addition for this week.
+1. `/pricing` is live with 3 tiers (Starter, Pro, Enterprise) and 2 customer segments, each tier showing its real evidence state (unproven / direct+relayed evidence / no evidence - hypothesis).
+2. A revenue simulator: inputs (number of direct leads, conversion rate lead→relayed, conversion rate relayed→paid, price per tier) produce monthly/annual revenue, with every assumption labeled and editable.
+3. `/about` carries the 10:1 memo: what the user does today (manual reconciliation, no platform), its true cost (time + risk), my price, and the three evidence-state numbers side by side, never averaged or picked as one.
+4. The founder-price discount ($3,500/mo for 12 months) is shown next to, never instead of, the list price ($4,500/mo), so the public price is never anchored to one person's number.
 
-## 4. Mockup (2 screens)
+## 4. Mockups (2 screens)
 
-**Before** (`assets/w13-mockup-antes.png`): the misleading message, in production until this week's fix.
+**`/pricing`** (`assets/w14-mockup-pricing.png`): 3 tiers, Pro highlighted as the only one with real evidence.
 
-![Before](../assets/w13-mockup-antes.png){ width=40% }
+![Pricing](../assets/w14-mockup-pricing.png){ width=40% }
 
-**After** (`assets/w13-mockup-despues.png`): what real users now see, verified in production.
+**`/about`, 10:1 memo** (`assets/w14-mockup-about.png`): the three evidence states plus the $0-paid line, shown honestly.
 
-![After](../assets/w13-mockup-despues.png){ width=40% }
+![About](../assets/w14-mockup-about.png){ width=40% }
 
 ## 5. Flow
 
@@ -36,72 +38,69 @@ Before the module closes, all of this works at packvalidator.online (already shi
 
 ```mermaid
 flowchart TD
-  A["Founder uploads a CSV"] --> B["Engine computes findings for this upload"]
-  B --> C{"Any brand-new findings?"}
-  C -- "no" --> D["Check: any PENDING findings still apply (same fingerprint)?"]
-  D -- "yes" --> E["Message: 'No hay hallazgos nuevos. Tienes N pendientes.' + link"]
-  D -- "no" --> F["Message: 'No hay hallazgos.'"]
-  C -- "yes" --> G["Message shows new count, plus pending count if any"]
-  E --> H["Home shows pending findings, labeled 'Ya reportado'"]
-  G --> I["Home shows new findings labeled 'Nuevo', pending labeled 'Ya reportado'"]
-  H --> J["Event logged: upload_seen_pending"]
-  I --> J
+  A["Founder asks a lead for a quote reaction"] --> B["Lead gives a number, unanchored"]
+  B --> C["System logs the evidence state: direct, relayed, or paid"]
+  C --> D["Simulator projects revenue per state, assumptions visible"]
+  C --> E["Pricing page shows tier with its evidence label"]
+  D --> E
 ```
 
 ### Swimlane
 
 ```mermaid
 flowchart LR
-  subgraph Founder
-    F1["Uploads a CSV"]
-    F2["Sees message with link, pending findings labeled 'Ya reportado'"]
+  subgraph Founder_Gonzalo
+    F1["Asks a quote request"]
+  end
+  subgraph Lead
+    L1["Gives a number, unanchored"]
   end
   subgraph System
-    S1["Computes findings: new vs. already-pending (same fingerprint)"]
-    S2["Builds the message: new + pending counts"]
+    S1["Logs evidence state: direct / relayed / paid"]
   end
-  subgraph Analytics
-    A1["Logs event: upload_seen_pending"]
+  subgraph Simulator_pricing
+    P1["Projects revenue from each state"]
+    P2["Shows in /pricing with its label"]
   end
-  F1 --> S1 --> S2 --> F2
-  S2 --> A1
+  F1 --> L1 --> S1
+  S1 --> P1 --> P2
+  S1 --> P2
 ```
 
-(Image version for the PDF: `assets/w13-swimlane.png`. The founder is both uploader and reviewer this week, per the Charter's single-founder limit.)
+(Image version for the PDF: `assets/w14-swimlane.png`. Shadow clause: payment buys access or service, never a better evidence label - the source stays visible at every step.)
 
 ## 6. Benchmark (global to local)
 
-- **Best existing solution on Earth for this is:** Sentry's issue grouping and embedded User Feedback widget - it groups repeated events into one issue instead of re-alerting, and collects in-context feedback tagged for triage.
-- **Mine differs or localizes by:** Sentry's grouping hides repetition from the user entirely (by design, for engineers who don't want noise); Validator's users explicitly told us the opposite problem - they needed repetition to stay *visible*, labeled, not hidden, because the audience is a non-technical founder who needs to know unresolved work still exists, not an engineer triaging alert volume.
+- **Best existing solution on Earth for this is:** Vanta and Drata, SOC 2 compliance platforms - both quote-only, with no public list price, observed ranges from ~US$6,500-12,000/year (small teams) to US$80,000-100,000+/year with multiple frameworks (sources: Vendr, SOC2 Auditors, ERPResearch, 2026).
+- **Mine differs or localizes by:** publishing a real list price instead of quote-only, because my buyer isn't losing sales for non-compliance like a SOC 2 customer is - they're avoiding a fine that may never arrive, so hiding the price behind a sales call would only add friction to an already weak willingness to pay.
 
 ## 7. Long view (3 years)
 
-If this slice holds, Validator's event log becomes the backbone of a real usage-pattern dataset: which finding types get ignored longest, which messages get clicked, which users return after a specific fix - informing both the product and, eventually, a defensible answer to the still-unverified willingness-to-pay question (Brief, Week 13, section 4) that user interviews alone can't settle.
+If this pricing view holds, Validator's three evidence states become the backbone of how the whole venture reports progress - not "X customers," but "X direct signals, Y relayed, Z actually paid" - so neither I nor an investor can mistake enthusiasm for revenue. In three years, either the mid-size-SME segment converts real payments at this price, or the evidence says so honestly and the price moves.
 
 ## 8. Scope cut (what I am NOT building)
 
-- The mobile label-alignment and small-touch-target issues found this week (documented in DECISIONS.md, not fixed - low severity, mobile-only).
-- Any price validation experiment (the #1 real threat per this week's Brief) - deliberately deferred to next week, not hidden.
-- Multi-person review workflows (Blueprint Condition 2, unchanged).
-- Any EPR filing, compliance certification, or recycling claim (shadow clause, unchanged).
+- No real payment processing this week - "paid" evidence state exists in the schema and UI but is simulated/labeled, pending a real pilot charge.
+- No enterprise-tier features - Enterprise stays a "request a quote" hypothesis, not a built offering.
+- No automatic price changes based on the simulator - the founder reviews and decides, per Condition 2.
+- Any claim of compliance, recycling, or environmental recovery - unchanged shadow clause from Weeks 12-13.
 
 ## 9. Architecture and stack
 
 | Layer | Choice | Why |
 |---|---|---|
-| App | Next.js on Vercel, existing w12-validator project | Iteration, not a new app |
-| Findings engine | `lib/validador.ts`, extended with `pendientesQueAplican()` | Reuses the existing fingerprint/dedup logic; no new engine |
-| Event log (new this week) | Minimal table, append-only, one row per message shown | Stack-floor requirement: analytics/feedback mechanism |
-| Tests | `npm run test:logica` (201/201, +7 cases), `npm run test:schema` (191/191) | Same as previous weeks |
+| App | Next.js on Vercel, existing w12-validator project | Iteration, same venture |
+| Pricing data | `pricing_evidence` table: amount, state (direct/relayed/paid), source, date - append-only | Condition 2: log each signal separately, never overwrite |
+| Simulator | Client-side calculator, assumptions as editable inputs, saved scenarios per Stack Floor | "Working calculator logic with saved scenarios" |
+| /pricing, /about | Public pages, no login required | A price without a public page is a secret, not a price |
+| Tests | `npm run test:logica`, `npm run test:schema` | Same pattern as previous weeks |
 
 ## 10. Test plan
 
-**Mechanical pass, already run and documented (DECISIONS.md):**
-1. Upload a CSV whose issues are all already pending: home shows them labeled "Ya reportado", with the correct count in the message. Verified in production (before: 0 cards; after: 5 cards).
-2. Upload a CSV with one genuinely new issue plus pending ones: both labels ("Nuevo" and "Ya reportado") appear correctly, counts match.
-3. Mobile (375px): no horizontal scroll, labels stay inside their card. Two minor issues found and logged as not-fixed-this-week (label shifts 4px on line wrap; link touch target is 20px, below recommended minimum).
-4. Readability before/after on the worst-scoring finding text, same method, same real data.
+**Mechanical pass:**
+1. Add a new evidence entry (direct/relayed/paid) - confirm it appears on the correct tier with its label, never silently upgraded to "paid" without a real transaction flag.
+2. Run the simulator with the founder's conversion assumptions - confirm monthly/annual output matches manual arithmetic.
+3. Save a scenario, reload the page - confirm it persists.
+4. Confirm `/pricing` and `/about` load without a session (public pages).
 
-**Persona test (Layer 1):** still pending this week - to be run on the updated screens with Gonzalo and Renata personas (PERSONAS.md).
-
-**Real humans (Layer 2), already complete:** 5 sessions, pain ranked and argued with the model, pain #1 fixed and verified in production, one user confirmed he would return after the fix - full detail in REAL_USERS_REPORT_GonzaloPatlan_Week13.pdf and BUILDCHAT_GonzaloPatlan_Week13.pdf.
+**Persona test (Layer 1):** both personas (Gonzalo/Concept G, Renata/synthetic) walk `/pricing` and `/about` from screenshots, checking whether the evidence-state labels read as honest disclosure or as confusing jargon to a first-time visitor.
