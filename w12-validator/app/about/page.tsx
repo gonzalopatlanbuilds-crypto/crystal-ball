@@ -32,14 +32,7 @@ export default async function AboutPage() {
   const e = ESTIMACION_FUNDADOR;
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col">
-      <header className="bg-[#0b5e52] text-white">
-        <div className="mx-auto max-w-3xl px-4 py-4">
-          <p className="text-2xl font-bold">
-            <Link href="/" className="hover:underline">Validator</Link> — El caso 10:1
-          </p>
-        </div>
-      </header>
+    <div className="flex flex-1 flex-col">
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Una sola empresa de evidencia. Trato esto como hipótesis.

@@ -46,13 +46,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   }
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col">
-      <header className="bg-[#0b5e52] text-white">
-        <div className="mx-auto max-w-3xl px-4 py-4">
-          <p className="text-2xl font-bold">Validator</p>
-          <p className="text-sm text-teal-100">packvalidator.online</p>
-        </div>
-      </header>
+    <div className="flex flex-1 flex-col">
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
         <Aviso />
         <h1 className="mt-6 text-2xl font-bold text-zinc-900">Evidencia de empaque que se sostiene sola</h1>

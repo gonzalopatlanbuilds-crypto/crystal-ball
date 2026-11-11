@@ -28,7 +28,7 @@ export default async function OnboardingPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-1 flex-col justify-center p-4">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-4">
       <h1 className="text-lg font-bold text-zinc-900">Un último paso</h1>
       <Aviso className="mt-2" />
       <p className="mt-4 text-sm text-zinc-600">

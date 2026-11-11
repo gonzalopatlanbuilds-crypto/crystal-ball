@@ -19,7 +19,7 @@ function ErrorDelCallback() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen flex-1 items-center justify-center p-4">
+    <main className="flex flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <Aviso className="mb-4" />
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm">

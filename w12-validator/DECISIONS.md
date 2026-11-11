@@ -1453,3 +1453,109 @@ sesión, contra la base real).
 - **Deploy 2 (push de 4 + 5 + 6):** pendiente de verificar con
   `verificar:deploy` y BASE_URL. Además, revisar en producción el texto
   «1 cliente que paga al mes» (20 leads).
+
+## 2026-11-11 — Deploy 2 verificado en producción (/simulador y el arreglo del plural)
+
+Push de f5795bf + 8027d59 + a4178ac juntos. Unos 60 s después del push,
+/simulador respondía 200 sin sesión en producción; antes, el deploy
+anterior lo redirigía a /login.
+
+- **`npm run verificar:deploy -- https://www.packvalidator.online`:**
+  30 OK, 0 FALLA. Incluye:
+  - el enlace nuevo de la home a /pricing y /about;
+  - los 4 checks de /simulador (200 sin sesión, «Evidencia real hoy:
+    0 pagos. Esto es una proyección.», cláusula de sombra, sin llaves).
+- **`BASE_URL=https://www.packvalidator.online npm run test:schema`:**
+  270 pass, 0 fail.
+  - 263 de schema.
+  - 7 HTTP: /, /login, /pricing, /about y /simulador → 200 sin sesión;
+    /validador y /onboarding → /login.
+- **Arreglo del plural en producción** (Chrome, sin sesión): en
+  /simulador se escribieron 20 leads / 50% / 10%.
+  - El embudo dijo «20 leads × 50% → 10 referidos × 10% → **1 cliente que
+    paga al mes**».
+  - Mensual $4,500 y «Anual (mismo mes × 12, sin bajas ni crecimiento)»
+    $54,000.
+  - No se guardó ningún escenario en producción.
+- **Queda pendiente de la semana 14:** el persona test (Layer 1), que
+  corre Gonzalo aparte.
+
+## 2026-11-11 — Encabezado de navegación compartido en todo el sitio
+
+**Problema (lo encontró Gonzalo):**
+
+- Cada página pública tenía su propio encabezado verde, sin enlaces a las
+  demás.
+- Desde /validador (el panel, con sesión) no había forma de llegar a
+  /pricing, /about o /simulador, ni de volver a la home.
+
+**Alcance acordado antes de construir** (Gonzalo aprobó: encabezado en el
+layout raíz, también en /login y /onboarding):
+
+- `components/EncabezadoSitio.tsx`: el único encabezado del sitio.
+  - «Validator» enlaza a la home.
+  - Con sesión: el correo y «Cerrar sesión».
+  - Fila de navegación (`components/NavSitio.tsx`, cliente solo para marcar
+    la página actual con `aria-current`): Precios · El caso 10:1 ·
+    Simulador, y con sesión «Mi evidencia» (/validador).
+  - En el teléfono, los enlaces bajan a otra línea (`flex-wrap`).
+- Los enlaces salen de `lib/nav.ts` (lógica pura).
+- `app/layout.tsx` (el layout raíz) lee la sesión y pone el encabezado una
+  sola vez.
+- Se quitaron los 5 encabezados duplicados: home, /pricing, /about,
+  /simulador y `AppHeader` en /validador (borrado). Las pestañas «Cargar
+  evidencia / Hallazgos» se quedan dentro de /validador como
+  sub-navegación.
+- `min-h-screen` fuera de /login, /onboarding, 404 y error: con el
+  encabezado arriba, causaba scroll vertical de más.
+
+**Lo que se sabía antes:**
+
+- Con sesión la home redirige a /validador (u /onboarding), así que con
+  sesión «Validator» lleva al panel. Es el comportamiento de siempre; no
+  se cambió.
+- «Mi evidencia» sale con cualquier sesión. Sin organización, /validador
+  manda a /onboarding.
+- El layout raíz consulta Supabase Auth en cada página: una consulta más
+  por visita en /validador. /login deja de poder ser estática; ya todas
+  las rutas eran dinámicas.
+
+**Bug encontrado por el build:**
+
+- La primera versión envolvía `createClient()` en `try/catch`.
+- `createClient()` lee cookies, y leer cookies lanza una señal interna con
+  la que Next marca la página como dinámica. El `catch` la atrapaba y
+  la registraba como error. Salió en el build: «couldn't be rendered
+  statically because it used cookies», en las 9 rutas.
+- Esta vez todas las rutas quedaron dinámicas de todos modos. Pero esconder
+  esa señal puede hacer que Next genere una página estática: el
+  encabezado saldría siempre «sin sesión» y /pricing quedaría con las
+  cifras del momento del build.
+- Arreglo: `createClient()` va fuera del `try`. Solo `getUser()` queda
+  protegido, y «Auth session missing» (no hay sesión) no se registra como
+  error.
+- Build limpio, todas las rutas ƒ.
+
+**Pruebas:**
+
+- `test:logica`: 287 pass (4 nuevos: enlaces sin sesión, sin /validador,
+  con sesión + «Mi evidencia» al final, la lista pública no se modifica).
+- `verificar:deploy`: 5 checks nuevos (/, /pricing, /about, /simulador y
+  /login). Cada uno exige el encabezado compartido con Validator → /,
+  Precios, El caso 10:1 y Simulador, y que sin sesión NO aparezca un
+  enlace a /validador. Total: 35.
+- **Local con `next start`** (no `next dev`), sin sesión, HTML real:
+  - /, /pricing, /about, /simulador y /login → 200, exactamente 1
+    `<header>` cada una, con los 4 enlaces.
+  - Página actual marcada: Precios en /pricing, El caso 10:1 en /about,
+    Simulador en /simulador.
+  - `BASE_URL=http://localhost:3000 test:schema`: 270 pass.
+  - El servidor se apagó al terminar.
+- `rm -rf .next && npm run build` limpio. `test:schema` 263 pass. `tsc` y
+  `lint`: limpios.
+- **No verificado:**
+  - /validador con sesión: el encabezado con correo, «Cerrar sesión» y
+    «Mi evidencia» marcado, y las pestañas debajo. Lo revisa Gonzalo en
+    producción con su sesión.
+  - El encabezado a 375 px no se midió esta vez (sin navegador). Con
+    sesión es la fila más larga (4 enlaces); se acomoda con `flex-wrap`.

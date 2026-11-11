@@ -12,6 +12,7 @@ import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import { eventoDeCarga } from "../lib/eventos.ts";
 import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, tonoEstado, type FilaPrecio } from "../lib/precios.ts";
+import { enlacesNav, ENLACES_PUBLICOS } from "../lib/nav.ts";
 import { aTexto, borrarEscenario, calcular, CLAVE_ESCENARIOS, conteo, textoPagados, ESCENARIOS_MAX, ETIQUETA_ANUAL, guardarEscenario, leerCampos, leerEscenarios, MENSAJE_SIN_ALMACEN, recordarUltimo, SUPUESTOS_EJEMPLO, supuestosValidos, ultimoEscenario, type CamposTexto, type Supuestos } from "../lib/simulador.ts";
 import { ahorroMensual, costoTiempoMes, cumpleRegla20, ESTIMACION_FUNDADOR, HOY as HOY_MEMO, precioMaximo, razonValorPrecio, REGLA_20, TOPE_PRECIO_SOBRE_AHORRO, validarEstimacion } from "../lib/memo.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
@@ -609,6 +610,15 @@ check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, 
   // El caso exacto del navegador: 20 leads × 50% × 10% = 1 cliente.
   const r = calcular({ ...SUPUESTOS_EJEMPLO, leadsMes: 20 });
   check("plural: el caso del navegador (20 × 50% × 10%) ahora dice «1 cliente que paga al mes»", textoPagados(r.pagadosMes) === "1 cliente que paga al mes");
+}
+
+// ---------- Semana 14: navegación compartida ----------
+{
+  const sin = enlacesNav(false), con = enlacesNav(true);
+  check("nav: sin sesión → Precios, El caso 10:1, Simulador (en ese orden)", sin.map((e) => e.etiqueta).join(" | ") === "Precios | El caso 10:1 | Simulador", sin);
+  check("nav: sin sesión no hay enlace a /validador", !sin.some((e) => e.href.startsWith("/validador")));
+  check("nav: con sesión → los mismos 3 + «Mi evidencia» (/validador) al final", con.length === 4 && con.slice(0, 3).map((e) => e.href).join() === "/pricing,/about,/simulador" && con[3].href === "/validador" && con[3].etiqueta === "Mi evidencia", con);
+  check("nav: enlacesNav no modifica la lista pública", ENLACES_PUBLICOS.length === 3 && enlacesNav(true) !== enlacesNav(true));
 }
 
 console.log(`\n${ok} pass, ${fail} fail`);

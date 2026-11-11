@@ -6,7 +6,7 @@ import Aviso from "@/components/Aviso";
 // para reintentar, en vez de la pantalla de error del framework.
 export default function ErrorGeneral({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-1 flex-col justify-center p-4">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-4">
       <Aviso />
       <h1 className="mt-6 text-xl font-bold text-zinc-900">Algo salió mal</h1>
       <p className="mt-2 text-sm text-zinc-600">No se pudo cargar esta página. Intenta de nuevo en unos segundos.</p>

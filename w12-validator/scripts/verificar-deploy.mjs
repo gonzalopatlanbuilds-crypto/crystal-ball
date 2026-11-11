@@ -67,6 +67,23 @@ check("/simulador dice que es una proyección y recuerda la evidencia real (0 pa
 check("/simulador muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tSim));
 check("/simulador no filtra llaves secretas", !FUGA.test(htmlSim));
 
+// Encabezado compartido (app/layout.tsx): en cada página, con "Validator"
+// → home, Precios, El caso 10:1 y Simulador. Sin sesión NO aparece "Mi
+// evidencia" (/validador); con sesión lo revisa Gonzalo en producción.
+function navegacion(html) {
+  const m = html.match(/<header[^>]*data-encabezado-sitio[^>]*>([\s\S]*?)<\/header>/);
+  if (!m) return { ok: false, detalle: "(sin encabezado compartido)" };
+  const h = m[1];
+  const faltan = [['href="/"', "Validator"], ['href="/pricing"', "Precios"], ['href="/about"', "El caso 10:1"], ['href="/simulador"', "Simulador"]]
+    .filter(([href, etiqueta]) => !h.includes(href) || !h.includes(etiqueta)).map(([href]) => href);
+  const conPanel = h.includes('href="/validador"');
+  return { ok: faltan.length === 0 && !conPanel, detalle: `(faltan: ${faltan.join(", ") || "nada"}; enlace a /validador sin sesión: ${conPanel})` };
+}
+for (const [ruta, html] of [["/", htmlHome], ["/pricing", htmlPricing], ["/about", htmlAbout], ["/simulador", htmlSim], ["/login", htmlLogin]]) {
+  const n = navegacion(html);
+  check(`${ruta} muestra la navegación compartida (inicio, Precios, El caso 10:1, Simulador; sin «Mi evidencia» sin sesión)`, n.ok, n.detalle);
+}
+
 for (const ruta of ["/validador", "/onboarding"]) {
   const res = await pedir(ruta);
   const destino = res.headers.get("location") ?? "";

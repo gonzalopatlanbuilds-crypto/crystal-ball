@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import AppHeader from "@/components/AppHeader";
 import NavValidador from "@/components/NavValidador";
 import Aviso from "@/components/Aviso";
 
@@ -31,8 +30,7 @@ export default async function ValidadorLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col">
-      <AppHeader email={user.email} />
+    <div className="flex flex-1 flex-col">
       <NavValidador />
       <div className="mx-auto w-full max-w-3xl px-4 pt-4">
         <Aviso />
