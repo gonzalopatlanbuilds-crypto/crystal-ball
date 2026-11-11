@@ -56,6 +56,16 @@ check("/about no promedia las cifras ($4,000 aparece una sola vez)", (tAbout.mat
 check("/about muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tAbout));
 check("/about no filtra llaves secretas", !FUGA.test(htmlAbout));
 
+// El simulador se renderiza solo en el navegador (lee localStorage): desde
+// fuera se revisa lo que arma el servidor, no las cajas de supuestos.
+const sim = await pedir("/simulador");
+const htmlSim = await sim.text();
+const tSim = texto(htmlSim);
+check("/simulador (pública) responde 200 sin sesión", sim.status === 200, `(${sim.status})`);
+check("/simulador dice que es una proyección y recuerda la evidencia real (0 pagos)", /Simulador de ingresos/.test(tSim) && /Evidencia real hoy: 0 pagos\. Esto es una proyección\./.test(tSim));
+check("/simulador muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tSim));
+check("/simulador no filtra llaves secretas", !FUGA.test(htmlSim));
+
 for (const ruta of ["/validador", "/onboarding"]) {
   const res = await pedir(ruta);
   const destino = res.headers.get("location") ?? "";

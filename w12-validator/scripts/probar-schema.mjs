@@ -715,7 +715,7 @@ check("tras pricing_evidence, RLS sigue encendido en todas las tablas", r.length
 // ---------- Rutas por HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
 if (BASE) {
-  for (const ruta of ["/", "/login", "/pricing", "/about"]) {
+  for (const ruta of ["/", "/login", "/pricing", "/about", "/simulador"]) {
     const res = await fetch(`${BASE}${ruta}`, { redirect: "manual" });
     check(`HTTP ${ruta} sin sesión → 200 (${BASE})`, res.status === 200, res.status);
   }
@@ -725,7 +725,7 @@ if (BASE) {
     check(`HTTP ${ruta} sin sesión → redirect a /login`, res.status >= 300 && res.status < 400 && /\/login$/.test(destino), [res.status, destino]);
   }
 } else {
-  console.log("SKIP HTTP (define BASE_URL para probar /, /login, /pricing, /about, /validador y /onboarding)");
+  console.log("SKIP HTTP (define BASE_URL para probar /, /login, /pricing, /about, /simulador, /validador y /onboarding)");
 }
 
 console.log(`\n${ok} pass, ${fail} fail`);

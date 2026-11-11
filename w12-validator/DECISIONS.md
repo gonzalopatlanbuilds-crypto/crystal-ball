@@ -1182,3 +1182,148 @@ los 3 PACKET). No se inventaron.
   `null` y la página dice que la estimación todavía no está publicada. No
   calcula ningún ahorro ni dice si el precio cumple la regla del 20%. La
   regla sí se muestra, como compromiso.
+
+## 2026-11-11 — Deploy 1 verificado en producción (/pricing y /about)
+
+Push de 45fbe7f + 4b92011 juntos. Unos 40 s después del push, /about
+respondía 200 sin sesión en producción; antes, el deploy anterior lo
+redirigía a /login.
+
+- **`npm run verificar:deploy -- https://www.packvalidator.online`:**
+  25 OK, 0 FALLA. Son los 10 de antes más 15 nuevos (7 de /pricing, 8 de
+  /about).
+  - El chip «Evidencia directa + referida» de Pro se arma con las filas
+    reales de la base de producción. Que salga confirma que /pricing lee
+    `pricing_evidence` con la llave pública en Vercel.
+  - En /about salen las 3 cifras con su fuente y la línea $0 pagada.
+- **`BASE_URL=https://www.packvalidator.online npm run test:schema`:**
+  269 pass, 0 fail.
+  - 263 de schema.
+  - 6 HTTP: /, /login, /pricing y /about → 200 sin sesión; /validador y
+    /onboarding → /login.
+- **No verificado todavía:** cómo se ven las páginas en el navegador
+  (escritorio y 375 px). Queda para la Feature 5.
+
+## 2026-11-11 — Feature 4: simulador de ingresos con escenarios guardados
+
+**Decisiones aprobadas por Gonzalo antes de escribir código (2026-11-11):**
+
+1. **Escenarios en localStorage, no en Supabase.**
+   - El Stack Floor pide «working calculator logic with saved scenarios» y
+     el PACKET §9 dice «client-side calculator».
+   - Los escenarios son supuestos de un navegador, no datos de usuarios:
+     sin tabla, sin RLS y sin SQL que correr.
+   - Límite, dicho en la página: viven solo en ese navegador, no pasan a
+     otro dispositivo y se pierden si se borran los datos del sitio.
+2. **Mezcla por nivel** (% de clientes en Starter / Pro / Enterprise, debe
+   sumar 100). Es un supuesto extra que el prompt no define: el embudo da
+   clientes, no su nivel. Default 0 / 100 / 0, porque solo Pro tiene
+   evidencia.
+3. **Anual = mensual × 12.** En pantalla, a pedido de Gonzalo: «Anual
+   (mismo mes × 12, sin bajas ni crecimiento)». No se acumulan cohortes,
+   porque eso pediría otro supuesto (bajas) que está fuera del alcance.
+
+**Qué se construyó:**
+
+- `/simulador`, pública: proxy `RUTAS_PUBLICAS`, enlazada desde /pricing.
+  - Arriba, separado de los supuestos: «Evidencia real hoy: N pagos. Esto
+    es una proyección.», leído de `pricing_evidence`, con enlace a /about.
+  - El simulador nunca lee ni escribe `pricing_evidence` ni ninguna tabla.
+- **Supuestos editables** (texto tal cual se escribe, validado al vuelo):
+  - leads directos/mes (entero 0–10,000);
+  - conversión directo → referido y referido → pagado (0–100%);
+  - precio por nivel (0–1,000,000; Enterprise empieza en 0 porque es
+    cotización);
+  - mezcla por nivel.
+- **Cómo se distinguen de las cifras reales de /about:** cada supuesto va
+  en una caja con borde punteado azul y la etiqueta «Supuesto: editable,
+  no medido». Las cifras reales llevan borde sólido y chip de estado.
+- **Valores iniciales** (10 leads, 50%, 10%, precios de lista, mezcla
+  0/100/0): la página dice que son un ejemplo, no los supuestos de quien
+  funda.
+- **Proyección:**
+  - el embudo paso a paso (leads → referidos → clientes que pagan);
+  - el ingreso por nivel;
+  - «Mensual» y «Anual (mismo mes × 12, sin bajas ni crecimiento)»;
+  - «Proyección hecha con supuestos. No es evidencia ni un ingreso real.»
+  - Con un supuesto inválido no calcula nada (no proyecta con datos malos).
+- **Escenarios:**
+  - Guardar = nombre (1–60 caracteres, con al menos una letra o número) +
+    valores. Cada guardado agrega uno nuevo, nunca sobrescribe (aunque el
+    nombre se repita). Máximo 50.
+  - Lista con Cargar y Borrar. Borrar es aceptable porque es solo el
+    navegador de esa persona.
+  - Al recargar vuelve la lista y se carga el último escenario guardado o
+    cargado.
+- **Robustez:** toda lectura y escritura de localStorage va en try/catch.
+  - Si el navegador no deja guardar (ventana privada, sitio bloqueado,
+    cuota llena), la calculadora sigue funcionando y avisa.
+  - Si los datos guardados están dañados, se muestran solo los escenarios
+    válidos y se dice cuántos se descartaron.
+- **Código:**
+  - `lib/simulador.ts`: lógica pura.
+  - `components/Simulador.tsx`: cliente.
+  - `components/SimuladorCliente.tsx`: lo carga con `ssr: false`. El
+    simulador lee localStorage al crear su estado; sin esto, el HTML del
+    servidor (sin escenarios) no coincidiría con el del navegador. También
+    evita `setState` dentro de un efecto, que el lint de Next 16 marca.
+
+**Pruebas:**
+
+- `test:logica`: 276 pass (36 nuevos). Incluyen la aritmética a mano:
+  - 20 × 50% × 10% = 1 cliente → $4,500/mes, $54,000/año.
+  - El ejemplo por default: 0.5 clientes → $2,250 / $27,000.
+  - 40 × 25% × 20% = 2 clientes, mezcla 50/50 → $1,500 + $4,500 =
+    $6,000/mes.
+  - Precio fundador $3,500 → $42,000/año.
+  - Enterprise a $0 no inventa ingreso.
+  - 7 × 33% × 17% = 0.39 clientes → $1,767.15 (redondeo a centavos).
+- Validación: leads decimales, negativos, vacíos o > 10,000; «1,000» con
+  coma; porcentaje > 100 o texto; precio negativo; mezcla que suma 90
+  (dice cuánto suma) o 33.3/33.3/33.4.
+- Guardar, recargar, cargar el último, borrar y nombres inválidos, contra
+  un almacén falso. Más: almacén que lanza error al leer y al guardar, sin
+  almacén, JSON dañado y escenarios mezclados válidos y dañados.
+- `verificar:deploy`: 4 checks nuevos de /simulador (200 sin sesión,
+  «Evidencia real hoy: 0 pagos. Esto es una proyección.», cláusula de
+  sombra, sin llaves). Las cajas de supuestos no están en el HTML del
+  servidor (`ssr: false`), así que desde fuera no se pueden revisar.
+- HTTP de `test:schema` con BASE_URL: /simulador → 200.
+- `rm -rf .next && npm run build` limpio (/simulador ƒ). `test:schema` 263
+  pass. `tsc` y `lint`: limpios.
+- **No verificado todavía:** guardar y recargar en un navegador real. No se
+  levantó ningún servidor.
+
+### 2026-11-11 — Prueba en navegador real del simulador (next start, local)
+
+Con `next start` sobre el build limpio (no `next dev`, por memoria), en
+Chrome, sin sesión. Sin problemas de memoria; al terminar se apagó el
+servidor y se borraron del navegador los escenarios de prueba.
+
+- **Aritmética en pantalla = a mano:**
+  - Ejemplo por default: 10 × 50% = 5 × 10% = 0.5 clientes → $2,250/mes,
+    $27,000/año.
+  - Escribiendo 20 leads: 1 cliente → $4,500 / $54,000.
+  - Pro a $3,500 y mezcla 50/50: Starter 0.5 × $1,500 = $750 + Pro
+    0.5 × $3,500 = $1,750 → $2,500/mes, $30,000/año.
+  - La etiqueta dice «Anual (mismo mes × 12, sin bajas ni crecimiento)».
+- **Validación en vivo:** con la mezcla en 50/100/0, la página dijo «La
+  mezcla tiene que sumar 100%. Hoy suma 150%.» y no mostró la proyección.
+- **Guardar:** «Lista 20 leads» y «Fundador 50/50» quedaron en
+  `validator.simulador.escenarios.v1` con sus valores.
+- **Recargar:** volvieron los 2 y se cargó «Fundador 50/50», el último
+  guardado («Se cargó tu último escenario…»).
+- **Cargar + recargar:** cargar «Lista 20 leads» y recargar restauró ese,
+  no el último guardado.
+- **Borrar + recargar:** «Fundador 50/50» desapareció del almacén y de la
+  lista y no volvió.
+- **Móvil:** iframes del mismo origen a 375 y 320 px (la ventana de Chrome
+  no se dejó redimensionar). Resultados:
+  - /simulador, /pricing y /about sin scroll horizontal, ningún elemento
+    fuera del ancho.
+  - Chips a 14 px: el más ancho, «Evidencia directa + referida», mide
+    208 px.
+  - Las 3 columnas de precio/mezcla caben a 375 px.
+- **Bug encontrado:** el embudo dice «1 clientes que pagan al mes». El
+  plural no cambia con 1. Pendiente de decidir si va en el commit 5
+  (fix de la prueba mecánica).

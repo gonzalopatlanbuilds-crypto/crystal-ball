@@ -54,6 +54,9 @@ export default async function PricingPage() {
           Los precios son mensuales, en pesos mexicanos. Validator todavía no
           cobra: no hay pagos en línea.
         </p>
+        <p className="mt-2 text-sm">
+          <Link href="/simulador" className="font-semibold text-[#0b5e52] underline">Simular ingresos con tus supuestos</Link>
+        </p>
       </main>
     </div>
   );

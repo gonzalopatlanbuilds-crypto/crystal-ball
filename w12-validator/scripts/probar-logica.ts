@@ -12,6 +12,7 @@ import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import { eventoDeCarga } from "../lib/eventos.ts";
 import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, tonoEstado, type FilaPrecio } from "../lib/precios.ts";
+import { aTexto, borrarEscenario, calcular, CLAVE_ESCENARIOS, ESCENARIOS_MAX, ETIQUETA_ANUAL, guardarEscenario, leerCampos, leerEscenarios, MENSAJE_SIN_ALMACEN, recordarUltimo, SUPUESTOS_EJEMPLO, supuestosValidos, ultimoEscenario, type CamposTexto, type Supuestos } from "../lib/simulador.ts";
 import { ahorroMensual, costoTiempoMes, cumpleRegla20, ESTIMACION_FUNDADOR, HOY as HOY_MEMO, precioMaximo, razonValorPrecio, REGLA_20, TOPE_PRECIO_SOBRE_AHORRO, validarEstimacion } from "../lib/memo.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
@@ -500,6 +501,99 @@ check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, 
   check("memo: razón con precio 0 → 0 (no infinito)", razonValorPrecio(1000, 0) === 0);
   check("memo: estimación con número negativo o vacía → inválida", validarEstimacion({ ...ej, horasMes: -1 }) !== null && validarEstimacion({ ...ej, costoHoraMxn: NaN }) !== null && validarEstimacion({ ...ej, base: "  " }) !== null);
   check("chip /about: directa y referida en ámbar (señal), solo un pago en verde", tonoEstado("direct") === "senal" && tonoEstado("relayed") === "senal" && tonoEstado("paid") === "evidencia");
+}
+
+// ---------- Semana 14: simulador de ingresos ----------
+{
+  const base = SUPUESTOS_EJEMPLO;
+  const con = (cambio: Partial<Supuestos>): Supuestos => ({ ...base, ...cambio });
+
+  // Aritmética a mano (la del mensaje de diseño): 20 × 50% × 10% = 1 cliente;
+  // 100% Pro a $4,500 → $4,500/mes, $54,000/año.
+  let r = calcular(con({ leadsMes: 20, convDirectoReferidoPct: 50, convReferidoPagadoPct: 10 }));
+  check("sim: 20 leads × 50% = 10 referidos × 10% = 1 cliente al mes", r.referidosMes === 10 && r.pagadosMes === 1, r);
+  check("sim: 1 cliente × 100% Pro × $4,500 = $4,500/mes", r.mensual === 4500 && r.porNivel.pro.ingresoMes === 4500, r);
+  check("sim: anual = mensual × 12 = $54,000 (sin bajas ni crecimiento)", r.anual === 54000, r);
+  // Con el ejemplo por default: 10 × 50% × 10% = 0.5 clientes → $2,250 / $27,000.
+  r = calcular(base);
+  check("sim: ejemplo por default → 0.5 clientes, $2,250/mes, $27,000/año", r.pagadosMes === 0.5 && r.mensual === 2250 && r.anual === 27000, r);
+  // Mezcla 50/50 Starter/Pro, 40 leads, 25%, 20% → 2 clientes: 1 × 1,500 + 1 × 4,500 = 6,000.
+  r = calcular(con({ leadsMes: 40, convDirectoReferidoPct: 25, convReferidoPagadoPct: 20, mezclaPct: { starter: 50, pro: 50, enterprise: 0 } }));
+  check("sim: 40 × 25% × 20% = 2 clientes; mezcla 50/50 → 1 × $1,500 + 1 × $4,500 = $6,000/mes", r.pagadosMes === 2 && r.porNivel.starter.ingresoMes === 1500 && r.mensual === 6000 && r.anual === 72000, r);
+  // Precio fundador: Pro a $3,500.
+  r = calcular(con({ leadsMes: 20, convDirectoReferidoPct: 50, convReferidoPagadoPct: 10, precios: { starter: 1500, pro: 3500, enterprise: 0 } }));
+  check("sim: precio fundador $3,500 → $3,500/mes, $42,000/año", r.mensual === 3500 && r.anual === 42000, r);
+  // Enterprise con precio 0 aporta 0 aunque tenga mezcla.
+  r = calcular(con({ leadsMes: 20, convDirectoReferidoPct: 50, convReferidoPagadoPct: 10, mezclaPct: { starter: 0, pro: 50, enterprise: 50 } }));
+  check("sim: Enterprise sin precio (0) no inventa ingreso → $2,250", r.mensual === 2250 && r.porNivel.enterprise.ingresoMes === 0, r);
+  r = calcular(con({ leadsMes: 0 }));
+  check("sim: 0 leads → $0", r.mensual === 0 && r.anual === 0);
+  // Decimales: 7 × 33% × 17% = 0.3927 → redondeo a centavos de los totales.
+  r = calcular(con({ leadsMes: 7, convDirectoReferidoPct: 33, convReferidoPagadoPct: 17 }));
+  check("sim: 7 × 33% × 17% = 0.39 clientes → $1,767.15/mes (redondeo a centavos)", r.pagadosMes === 0.39 && r.mensual === 1767.15 && r.anual === 21205.8, r);
+  check("sim: la etiqueta anual dice que es el mismo mes × 12, sin bajas ni crecimiento", ETIQUETA_ANUAL === "Anual (mismo mes × 12, sin bajas ni crecimiento)");
+  check("sim: el ejemplo por default trae la mezcla 0/100/0 y los precios de lista", base.mezclaPct.starter === 0 && base.mezclaPct.pro === 100 && base.mezclaPct.enterprise === 0 && base.precios.pro === 4500 && base.precios.starter === 1500 && base.precios.enterprise === 0);
+
+  // Validación de lo que escribe la persona.
+  const texto = aTexto(base);
+  check("sim: el ejemplo, pasado a texto y leído de vuelta, es igual", JSON.stringify(leerCampos(texto).supuestos) === JSON.stringify(base));
+  const errorDe = (cambio: Partial<CamposTexto>) => leerCampos({ ...texto, ...cambio }).errores;
+  check("sim: leads decimales, negativos, vacíos o > 10,000 → error", !!errorDe({ leadsMes: "2.5" }).leadsMes && !!errorDe({ leadsMes: "-1" }).leadsMes && !!errorDe({ leadsMes: "" }).leadsMes && !!errorDe({ leadsMes: "10001" }).leadsMes);
+  check("sim: leads «1,000» con coma → se acepta como 1000", leerCampos({ ...texto, leadsMes: "1,000" }).supuestos?.leadsMes === 1000);
+  check("sim: conversión > 100, < 0 o texto → error", !!errorDe({ convDirectoReferidoPct: "101" }).convDirectoReferidoPct && !!errorDe({ convReferidoPagadoPct: "-5" }).convReferidoPagadoPct && !!errorDe({ convReferidoPagadoPct: "diez" }).convReferidoPagadoPct);
+  check("sim: conversión 12.5% → se acepta", leerCampos({ ...texto, convReferidoPagadoPct: "12.5" }).supuestos?.convReferidoPagadoPct === 12.5);
+  check("sim: precio negativo → error", !!errorDe({ precios: { ...texto.precios, pro: "-4500" } })["precio.pro"]);
+  const mezcla = errorDe({ mezclaPct: { starter: "30", pro: "30", enterprise: "30" } });
+  check("sim: mezcla que suma 90% → error que dice cuánto suma", /suma 90%/.test(mezcla.mezcla ?? ""), mezcla);
+  check("sim: con un error, no hay supuestos (no se calcula con datos malos)", leerCampos({ ...texto, leadsMes: "x" }).supuestos === null);
+  check("sim: mezcla 33.3/33.3/33.4 → suma 100, se acepta", leerCampos({ ...texto, mezclaPct: { starter: "33.3", pro: "33.3", enterprise: "33.4" } }).supuestos !== null);
+
+  // Guardar y recargar con un almacén falso (como localStorage).
+  const almacenFalso = () => {
+    const datos = new Map<string, string>();
+    return { getItem: (k: string) => datos.get(k) ?? null, setItem: (k: string, v: string) => void datos.set(k, v), datos };
+  };
+  const a = almacenFalso();
+  const ahora = new Date("2026-11-11T21:00:00Z");
+  let g = guardarEscenario(a, [], "Conservador", con({ leadsMes: 20 }), "id-1", ahora);
+  check("sim: guardar un escenario → 1 en la lista y en el almacén", g.error === null && g.escenarios.length === 1 && JSON.parse(a.datos.get(CLAVE_ESCENARIOS)!).length === 1, g);
+  g = guardarEscenario(a, g.escenarios, "  Conservador  ", con({ leadsMes: 30 }), "id-2", ahora);
+  check("sim: guardar con el mismo nombre agrega otro, no sobrescribe", g.escenarios.length === 2 && g.escenarios[0].supuestos.leadsMes === 20 && g.escenarios[1].nombre === "Conservador");
+  // "Recargar la página": leer de nuevo desde el almacén.
+  let l = leerEscenarios(a);
+  check("sim: al recargar, vuelven los 2 escenarios con sus valores", l.error === null && l.escenarios.length === 2 && l.escenarios[1].supuestos.leadsMes === 30, l);
+  check("sim: al recargar, se carga el último guardado", ultimoEscenario(a, l.escenarios)?.id === "id-2");
+  recordarUltimo(a, "id-1");
+  check("sim: cargar uno lo vuelve el último (se restaura ese al recargar)", ultimoEscenario(a, leerEscenarios(a).escenarios)?.id === "id-1");
+  const b = borrarEscenario(a, l.escenarios, "id-1");
+  check("sim: borrar quita solo ese", b.escenarios.length === 1 && leerEscenarios(a).escenarios[0].id === "id-2");
+  check("sim: si el último se borró, no se carga ninguno (arranca con el ejemplo)", ultimoEscenario(a, leerEscenarios(a).escenarios) === null);
+  check("sim: nombre vacío, solo espacios o solo puntuación → no se guarda", !!guardarEscenario(a, [], "", base, "x", ahora).error && !!guardarEscenario(a, [], "   ", base, "x", ahora).error && !!guardarEscenario(a, [], "...", base, "x", ahora).error);
+  check("sim: nombre de más de 60 caracteres → no se guarda", !!guardarEscenario(a, [], "x".repeat(61), base, "x", ahora).error);
+  const lleno = Array.from({ length: ESCENARIOS_MAX }, (_, i) => ({ id: `e${i}`, nombre: `E${i}`, supuestos: base, guardadoEn: "" }));
+  check("sim: con 50 escenarios ya no guarda más (y no toca el almacén)", !!guardarEscenario(almacenFalso(), lleno, "otro", base, "x", ahora).error);
+
+  // Navegador que no deja guardar (ventana privada, sitio bloqueado).
+  const roto = { getItem: () => { throw new Error("SecurityError"); }, setItem: () => { throw new Error("QuotaExceededError"); } };
+  l = leerEscenarios(roto);
+  check("sim: almacén que lanza error al leer → lista vacía + aviso, sin romper", l.escenarios.length === 0 && l.error === MENSAJE_SIN_ALMACEN);
+  g = guardarEscenario(roto, [], "Prueba", base, "x", ahora);
+  check("sim: almacén que lanza error al guardar → aviso y la lista no cambia", !!g.error && g.escenarios.length === 0, g);
+  check("sim: sin almacén (null) → aviso, sin romper", leerEscenarios(null).error === MENSAJE_SIN_ALMACEN && ultimoEscenario(roto, []) === null);
+  // Datos dañados en el almacén.
+  const dañado = almacenFalso();
+  dañado.setItem(CLAVE_ESCENARIOS, "{no es json");
+  check("sim: JSON dañado → lista vacía + aviso", leerEscenarios(dañado).escenarios.length === 0 && /dañados/.test(leerEscenarios(dañado).error ?? ""));
+  dañado.setItem(CLAVE_ESCENARIOS, JSON.stringify([
+    { id: "ok", nombre: "Bueno", supuestos: base, guardadoEn: "2026-11-11" },
+    { id: "malo1", nombre: "Mezcla rota", supuestos: { ...base, mezclaPct: { starter: 10, pro: 10, enterprise: 10 } } },
+    { id: "malo2", nombre: "Sin precios", supuestos: { leadsMes: 1 } },
+    { id: "malo3", nombre: "", supuestos: base },
+    "basura",
+  ]));
+  l = leerEscenarios(dañado);
+  check("sim: se muestran solo los escenarios válidos y se avisa cuántos se descartaron", l.escenarios.length === 1 && l.escenarios[0].id === "ok" && /4 escenario/.test(l.error ?? ""), l);
+  check("sim: supuestos con leads como texto → inválidos", supuestosValidos({ ...base, leadsMes: "20" }) === null && supuestosValidos(null) === null);
 }
 
 console.log(`\n${ok} pass, ${fail} fail`);
