@@ -1039,3 +1039,72 @@ y `order by s.orden`. Ahora la prueba exige el orden 3,500 → 4,000 → 4,500.
   - `pricing_evidence_inmutable` como RPC → 404.
   - El resto de tablas y RPC igual que en la semana 13: 401/404, ninguna
     fila visible.
+
+## 2026-11-11 — Feature 2: /pricing (3 niveles, 2 segmentos, chip de evidencia)
+
+**Qué se construyó:**
+
+- `app/pricing/page.tsx`: página pública, sin sesión y sin redirecciones.
+  Sigue el mockup `assets/w14-mockup-pricing.png`. Tres tarjetas:
+  - **Starter:** $1,500 MXN/mes, PyME micro (1–3 personas), chip ámbar
+    «Segmento no probado».
+  - **Pro:** $4,500 MXN/mes de lista. A su lado, nunca en su lugar
+    (PACKET §3.4): «Precio fundador: $3,500/mes × 12 meses». PyME mediana
+    (~45 empleados, 4+ proveedores). Chip verde «Evidencia directa +
+    referida» y borde verde más grueso: es la única tarjeta con evidencia
+    real.
+  - **Enterprise:** «Cotización a medida», chip gris «Hipótesis, sin
+    evidencia».
+- Los 2 segmentos con precio publicado son micro y mediana. Enterprise es
+  una hipótesis por cotización.
+- «Ver detalle» es un `<details>`, así que funciona sin JavaScript.
+  - En Pro lista cada cifra real por separado, con su estado y su fuente,
+    y «Pagos reales: 0. Ninguna de estas cifras es una venta».
+  - En Starter y Enterprise dice que nadie de ese segmento ha dado una
+    cifra.
+- `lib/precios.ts`: lógica pura (niveles, chips, formato, normalización).
+- `lib/evidencia-precio.ts`: lee `pricing_evidence` con la llave pública.
+- `components/ChipEvidencia.tsx`: el chip. El texto siempre va escrito; el
+  color solo acompaña.
+
+**Decisiones:**
+
+- **El chip de Pro se calcula de las filas reales**, no está escrito a mano.
+  - Sale de los estados presentes, en orden fijo (directa → referida →
+    pagada).
+  - «Pagada» solo aparece si existe una fila `paid`, y la base solo acepta
+    una con referencia de pago (Feature 1).
+  - Si la lectura falla o no hay filas, Pro no se presenta como respaldado:
+    chip gris y un aviso en rojo.
+- **Sin columna de segmento** (confirmado por Gonzalo, 2026-11-11). Todas
+  las filas de evidencia son hoy del segmento Pro porque toda la evidencia
+  viene de ahí. Si llega evidencia de un segmento distinto, se agrega la
+  columna en una migración futura, sin romper las filas existentes.
+- **Bug evitado antes de probar en el navegador:** el proxy
+  (`lib/supabase/middleware.ts`) manda a `/login` toda ruta que no esté en
+  `RUTAS_PUBLICAS`, así que `/pricing` sin sesión habría redirigido. Se
+  agregó `/pricing` a la lista.
+
+**Pruebas:**
+
+- `test:logica`: 225 pass (20 nuevos: niveles y precios, 2 segmentos, chip
+  por nivel con y sin filas, «pagada» solo con fila paid, estado inventado
+  ignorado, formato $1,500, normalización de numeric como texto).
+- HTTP de `test:schema` (con BASE_URL) y `verificar:deploy` ahora cubren
+  `/pricing`. `verificar:deploy` tiene 7 checks nuevos:
+  - 200 sin sesión;
+  - 3 niveles y 3 chips;
+  - precio fundador junto al de lista;
+  - que no diga «pagada»;
+  - la cláusula de sombra;
+  - sin llaves secretas.
+- **Revisión local** (`next dev`, sin sesión, contra la base real): 200,
+  las 3 cifras con su fuente bajo Pro, «Pagos reales: 0». No se probó en el
+  navegador ni a 375 px: el servidor de desarrollo se detuvo por falta de
+  memoria del sistema. Queda para el deploy 1 y la Feature 5.
+- **Antes del commit 2:**
+  - `rm -rf .next && npm run build` limpio; `/pricing` sale como ruta
+    dinámica (ƒ).
+  - `test:schema`: 263 pass, sin BASE_URL. La parte HTTP se saltó porque no
+    había servidor levantado; corre en el deploy 1.
+  - `test:logica`: 225 pass. `lint`: limpio.

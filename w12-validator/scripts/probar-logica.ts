@@ -11,6 +11,7 @@ import { ESCENARIOS } from "./escenarios-lector.ts";
 import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import { eventoDeCarga } from "../lib/eventos.ts";
+import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, type FilaPrecio } from "../lib/precios.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
   describirHallazgo,
@@ -440,6 +441,44 @@ check("evento: con pendientes se registra upload_seen_pending con la versión y 
 check("evento: 1 pendiente también se registra", eventoDeCarga("v-1", 1)?.p_pendientes === 1);
 check("evento: sin pendientes no se registra nada", eventoDeCarga("v-1", 0) === null);
 check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, NaN, 2.5].every((n) => eventoDeCarga("v-1", n) === null));
+
+// ---------- Semana 14: niveles de precio y estados de evidencia ----------
+{
+  const [starter, pro, enterprise] = NIVELES;
+  check("precios: 3 niveles en orden Starter, Pro, Enterprise", NIVELES.map((n) => n.nombre).join(",") === "Starter,Pro,Enterprise", NIVELES.map((n) => n.nombre));
+  check("precios: Starter MXN 1,500, PyME micro 1-3 personas", starter.precioListaMxn === 1500 && /micro \(1–3 personas\)/.test(starter.segmento), starter);
+  check("precios: Pro MXN 4,500 de lista + 3,500 fundador × 12 meses", pro.precioListaMxn === 4500 && pro.precioFundador?.mxn === 3500 && pro.precioFundador?.meses === 12, pro);
+  check("precios: Pro es PyME mediana ~45 empleados, 4+ proveedores", /~45 empleados, 4\+ proveedores/.test(pro.segmento), pro.segmento);
+  check("precios: Enterprise es cotización (sin precio de lista)", enterprise.precioListaMxn === null && enterprise.precioFundador === null, enterprise);
+  check("precios: 2 segmentos con precio publicado (micro y mediana)", SEGMENTOS.length === 2 && /micro/.test(SEGMENTOS[0]) && /mediana/.test(SEGMENTOS[1]), SEGMENTOS);
+  check("precios: solo Pro lee evidencia real", NIVELES.filter((n) => n.usaEvidencia).map((n) => n.id).join() === "pro");
+
+  const fila = (id: number, amount_mxn: number, state: FilaPrecio["state"]): FilaPrecio => ({ id, amount_mxn, state, source: "Usuario #3", note: null, created_at: "2026-11-11" });
+  const reales = [fila(1, 3500, "direct"), fila(2, 4000, "direct"), fila(3, 4500, "relayed")];
+  check("chip: Starter → «Segmento no probado» (ámbar), haya o no filas", JSON.stringify(chipDeNivel(starter, reales)) === JSON.stringify({ texto: "Segmento no probado", tono: "no-probado" }));
+  check("chip: Enterprise → «Hipótesis, sin evidencia» (gris)", JSON.stringify(chipDeNivel(enterprise, reales)) === JSON.stringify({ texto: "Hipótesis, sin evidencia", tono: "hipotesis" }));
+  check("chip: Pro con las 3 filas reales → «Evidencia directa + referida» (verde)", JSON.stringify(chipDeNivel(pro, reales)) === JSON.stringify({ texto: "Evidencia directa + referida", tono: "evidencia" }), chipDeNivel(pro, reales));
+  check("chip: Pro sin filas → no se presenta como respaldado", chipDeNivel(pro, []).tono !== "evidencia" && chipDeNivel(pro, []).texto === "Sin evidencia registrada");
+  check("chip: Pro si la lectura falló (null) → no se presenta como respaldado", chipDeNivel(pro, null).tono !== "evidencia");
+  check("chip: solo directas → «Evidencia directa» (sin «referida» ni «pagada»)", textoChipEvidencia(["direct", "direct"]) === "Evidencia directa");
+  check("chip: «pagada» solo aparece si hay una fila paid", !/pagada/.test(textoChipEvidencia(["direct", "relayed"]) ?? "") && textoChipEvidencia(["relayed", "paid", "direct"]) === "Evidencia directa + referida + pagada");
+  check("chip: un estado inventado no cuenta («validated»)", textoChipEvidencia(["validated"]) === null);
+  check("pagos reales: 0 con las 3 filas reales; 1 si hay una fila paid", pagosReales(reales) === 0 && pagosReales([...reales, fila(4, 4500, "paid")]) === 1);
+  check("etiquetas por fila: Directa / Referida / Pagada", ETIQUETA_ESTADO_PRECIO.direct === "Directa" && ETIQUETA_ESTADO_PRECIO.relayed === "Referida" && ETIQUETA_ESTADO_PRECIO.paid === "Pagada");
+  check("formato: $1,500 / $3,500 / $4,500", [1500, 3500, 4500].map(formatoMxn).join(" ") === "$1,500 $3,500 $4,500", [1500, 3500, 4500].map(formatoMxn));
+  // Así llegan de Supabase (numeric como número o como texto).
+  const crudas = [
+    { id: 1, amount_mxn: 3500.0, state: "direct", source: "a", note: null, created_at: "x" },
+    { id: 2, amount_mxn: "4000.00", state: "direct", source: "b", note: "techo", created_at: "x" },
+    { id: 3, amount_mxn: 4500, state: "validated", source: "c" },
+    { id: 4, amount_mxn: 0, state: "direct", source: "d" },
+    { id: 5, amount_mxn: "abc", state: "direct", source: "e" },
+    null,
+  ];
+  const norm = normalizarFilas(crudas);
+  check("normalizar: acepta numeric como texto, descarta estado inventado, monto 0/no numérico y basura", norm.length === 2 && norm[1].amount_mxn === 4000 && norm[1].note === "techo", norm);
+  check("normalizar: algo que no es lista → []", normalizarFilas(null).length === 0 && normalizarFilas({}).length === 0);
+}
 
 console.log(`\n${ok} pass, ${fail} fail`);
 if (fail > 0) process.exit(1);

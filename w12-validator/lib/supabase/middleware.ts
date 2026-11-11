@@ -6,8 +6,11 @@ import { NextResponse, type NextRequest } from "next/server";
 // (server components, ya con acceso a `profiles`), no aquí, para no
 // duplicar una consulta a la base de datos en cada request que pasa por
 // el middleware.
-// No hay páginas públicas con datos: todo lo de /validador exige sesión.
-const RUTAS_PUBLICAS = ["/", "/login", "/auth/callback", "/auth/signout"];
+// Ninguna página pública muestra datos de clientes: todo lo de /validador
+// exige sesión. /pricing solo lee pricing_evidence (datos del venture).
+// /pricing es pública (semana 14): un precio sin página pública es un
+// secreto, no un precio (PACKET §9).
+const RUTAS_PUBLICAS = ["/", "/login", "/auth/callback", "/auth/signout", "/pricing"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });

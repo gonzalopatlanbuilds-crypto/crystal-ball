@@ -33,6 +33,17 @@ check("/login no redirige al muro de Vercel (Deployment Protection apagado)", !/
 check("/login muestra el aviso de datos simulados y la cláusula de sombra", /Datos simulados/.test(texto(htmlLogin)) && /Validator no certifica cumplimiento ni reciclaje/.test(texto(htmlLogin)));
 check("/login no filtra llaves secretas", !FUGA.test(htmlLogin));
 
+const pricing = await pedir("/pricing");
+const htmlPricing = await pricing.text();
+const tPricing = texto(htmlPricing);
+check("/pricing (pública) responde 200 sin sesión", pricing.status === 200, `(${pricing.status})`);
+check("/pricing muestra Starter, Pro y Enterprise", /Starter/.test(tPricing) && /\bPro\b/.test(tPricing) && /Enterprise/.test(tPricing));
+check("/pricing muestra los 3 estados: no probado, evidencia directa + referida, hipótesis", /Segmento no probado/.test(tPricing) && /Evidencia directa \+ referida/.test(tPricing) && /Hipótesis, sin evidencia/.test(tPricing));
+check("/pricing muestra el precio fundador junto al de lista", /\$3,500\/mes × 12 meses/.test(tPricing) && /\$4,500/.test(tPricing));
+check("/pricing no dice «pagada» (no hay pagos reales)", !/[Pp]agada/.test(tPricing));
+check("/pricing muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tPricing));
+check("/pricing no filtra llaves secretas", !FUGA.test(htmlPricing));
+
 for (const ruta of ["/validador", "/onboarding"]) {
   const res = await pedir(ruta);
   const destino = res.headers.get("location") ?? "";
