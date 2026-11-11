@@ -932,3 +932,110 @@ fila. Un insert que no guarda nada igual gasta su número.
   - la carga `w13-c` no llamó al RPC (0 pendientes).
 - No es un bug: los ids no son un contador de eventos. Para contar eventos
   se usa `count(*)`, nunca `max(id)`.
+
+# Semana 14 — Pricing (docs/PACKET.md de la semana 14)
+
+## 2026-11-11 — Feature 1: tabla pricing_evidence (append-only, lectura pública)
+
+**Qué se construyó:**
+
+- `sql/schema.sql`, sección «Semana 14». Tabla `pricing_evidence` con
+  estas columnas:
+  - `id`
+  - `org_id`: nullable; null = el venture, no un cliente.
+  - `amount_mxn`: > 0.
+  - `state`: direct / relayed / paid.
+  - `source`: obligatoria, no puede ser solo espacios o puntuación.
+  - `note`
+  - `payment_reference`
+  - `created_at`
+- `sql/seed-pricing-evidence.sql`: las 3 filas reales, comentadas como
+  investigación de usuario real de las semanas 13-14, no simulada.
+  - 3,500 direct (sin ancla).
+  - 4,000 direct (techo declarado).
+  - 4,500 relayed (de quien decide, reportado por el usuario #3).
+  - Ninguna fila paid.
+  - Es idempotente: no repite una fila con el mismo monto + estado + fuente.
+
+**Decisiones:**
+
+- **`state` es `text` con `check`, no un `enum` de Postgres.**
+  - Es el mismo patrón que `findings.type` y `eventos.tipo`.
+  - Se puede volver a correr el schema entero sin bloques especiales.
+  - Para quien lee los datos el efecto es el mismo: solo hay tres valores
+    posibles.
+- **Columna extra `payment_reference`** (el prompt no la lista).
+  - Es la «real proof» que pide la cláusula de sombra. La regla en la base:
+    `state = 'paid'` ⇔ hay una referencia de pago con contenido.
+  - Ni un paid sin prueba, ni una prueba pegada a direct/relayed.
+  - Pasar a paid nunca es editar una fila. Es una fila nueva con la
+    referencia, y la relayed original sigue ahí.
+- **Append-only también para el SQL Editor.** Hay triggers contra update,
+  delete y truncate, igual que en `eventos`. Una corrección es una fila
+  nueva.
+- **Quién escribe:**
+  - Solo «quien funda» escribe, por la vía del service role. Hoy eso es el
+    SQL Editor; no hay ninguna cuenta fundadora dentro de la app.
+  - `anon` y `authenticated` tienen solo SELECT (policy `using (true)`). No
+    hay policy de insert.
+  - Así ninguna cuenta autenticada, tampoco la de Gonzalo, puede escribir
+    desde la app.
+- **Lectura pública.** Es la excepción a «anon no lee nada»: son datos del
+  venture para /pricing y /about, no datos de clientes. `probar-anon.sh` lo
+  marca como esperado.
+
+**Bug encontrado por test:schema antes de correr nada en Supabase.** La
+primera siembra (`insert … select from (values …) where not exists`)
+insertó el 4,000 con id 1. Postgres no garantiza el orden de las filas de
+`VALUES` cuando pasan por el anti-join. Se arregló con una columna `orden`
+y `order by s.orden`. Ahora la prueba exige el orden 3,500 → 4,000 → 4,500.
+
+**Pruebas:**
+
+- `test:schema`: 263 pass (antes 222). 41 checks nuevos:
+  - La siembra, corrida 2 veces, deja exactamente 3 filas y ninguna paid.
+  - anon, una cuenta con org y una sin org leen las 3.
+  - Esas tres no pueden: insertar, mejorar un estado con update, editar un
+    monto, borrar ni vaciar la tabla.
+  - Ni el superusuario edita, borra ni vacía la tabla.
+  - La base rechaza: paid sin referencia, paid con referencia en blanco,
+    direct con referencia, un estado inventado, un monto 0 o negativo, y
+    una fuente vacía, de solo puntuación o ausente.
+  - Una fila paid con referencia, como fila nueva, sí entra, y la relayed
+    sigue igual.
+  - anon sigue sin EXECUTE en ninguna función y RLS sigue encendido en
+    todas las tablas.
+- `test:logica`: 205 pass. `npm run lint`: limpio.
+- `scripts/probar-anon.sh` ahora prueba con la llave pública: lectura 200
+  con las 3 filas; POST, PATCH y DELETE en `pricing_evidence` → 401/403.
+  **Pendiente:** correrlo contra Supabase después de que Gonzalo corra el
+  SQL.
+
+### 2026-11-11 — Fuentes corregidas y siembra verificada en Supabase
+
+- **Fuentes.** Gonzalo corrigió el texto de las fuentes antes de correr la
+  siembra:
+  - 3,500 y 4,000: «Week 13 user session», una misma conversación (primera
+    y segunda respuesta).
+  - 4,500: «Week 14 follow-up session», otra conversación, de parte de
+    quien decide.
+  - Solo se conoce la semana del curso, no el día: no se inventó ninguna
+    fecha. `created_at` es la fecha de registro (2026-11-11), no la de la
+    conversación.
+  - El texto anterior nunca llegó a la base: la tabla seguía vacía (anon
+    leía `200 []`).
+- **Siembra.** Gonzalo corrió `sql/schema.sql` y luego
+  `sql/seed-pricing-evidence.sql` en el SQL Editor, y vio 3 filas.
+- **Lectura con la llave pública** (curl a `/rest/v1/pricing_evidence`):
+  200 con exactamente 3 filas, todas con `org_id` null y
+  `payment_reference` null:
+  - id 1: 3,500 direct.
+  - id 2: 4,000 direct.
+  - id 3: 4,500 relayed.
+- **`scripts/probar-anon.sh` contra Supabase:**
+  - POST (paid falso y direct) → 401.
+  - PATCH (intento de cambiar el estado a paid) → 401.
+  - DELETE → 401.
+  - `pricing_evidence_inmutable` como RPC → 404.
+  - El resto de tablas y RPC igual que en la semana 13: 401/404, ninguna
+    fila visible.

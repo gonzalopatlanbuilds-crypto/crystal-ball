@@ -52,6 +52,7 @@ rpc evidencia_inmutable '{}'
 rpc evidencia_validar_insert '{}'
 rpc registrar_evento "{\"p_tipo\":\"upload_seen_pending\",\"p_evidence_version_id\":\"$Z\",\"p_pendientes\":1}"
 rpc evento_inmutable '{}'
+rpc pricing_evidence_inmutable '{}'
 for t in organizations profiles evidence_versions findings decisions lector_llamadas eventos; do tabla $t; done
 escribir evidence_versions "{\"org_id\":\"$Z\",\"uploaded_by\":\"$Z\",\"source_filename\":\"x.csv\",\"raw_rows\":[],\"content_sha256\":\"$(printf 'a%.0s' $(seq 64))\"}"
 escribir decisions "{\"org_id\":\"$Z\",\"finding_id\":\"$Z\",\"decided_by\":\"$Z\",\"decision\":\"confirmed\",\"note\":\"x\"}"
@@ -69,6 +70,22 @@ done
 for metodo in PATCH DELETE; do
   printf '%-28s ' "anon $metodo decisiones"
   curl -s -o "$T" -w '%{http_code} ' -X $metodo "$U/rest/v1/decisions?id=neq.$Z" -H "apikey: $K" -H "Authorization: Bearer $K" -H 'Content-Type: application/json' -d '{"note":"editada"}'
+  head -c 140 "$T"; echo
+done
+rm -f "$T"
+# Semana 14: pricing_evidence es la excepción a "anon no lee nada": es la
+# evidencia de precio del venture para /pricing y /about (públicas).
+# Esperado: la lectura da 200 con las filas; cualquier escritura => 401/403.
+T="$(mktemp)"
+printf '%-28s ' "anon LEE pricing_evidence"
+curl -s -o "$T" -w '%{http_code} ' "$U/rest/v1/pricing_evidence?select=amount_mxn,state&order=id" -H "apikey: $K" -H "Authorization: Bearer $K"
+head -c 200 "$T"; echo "   <- esperado 200 con las 3 filas"
+escribir pricing_evidence '{"amount_mxn":9999,"state":"paid","source":"anon","payment_reference":"FALSO-1"}'
+escribir pricing_evidence '{"amount_mxn":100,"state":"direct","source":"anon"}'
+for metodo in PATCH DELETE; do
+  printf '%-28s ' "anon $metodo precios"
+  curl -s -o "$T" -w '%{http_code} ' -X $metodo "$U/rest/v1/pricing_evidence?id=gt.0" -H "apikey: $K" -H "Authorization: Bearer $K" \
+    -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{"state":"paid","payment_reference":"FALSO-1"}'
   head -c 140 "$T"; echo
 done
 rm -f "$T"

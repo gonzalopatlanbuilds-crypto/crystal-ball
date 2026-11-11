@@ -648,6 +648,70 @@ check("tras eventos, anon sigue sin EXECUTE en ninguna función", r.length === 0
 r = (await db.query(`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`)).rows;
 check("tras eventos, RLS sigue encendido en todas las tablas (incluida eventos)", r.length === 0, r);
 
+// ---------- Semana 14: pricing_evidence (lectura pública, append-only) ----------
+const seed = fs.readFileSync(new URL("../sql/seed-pricing-evidence.sql", import.meta.url), "utf8");
+await db.exec(seed);
+await db.exec(seed); // idempotente: no duplica
+const precios = async () => (await db.query(`select amount_mxn::float8 amount, state, payment_reference from pricing_evidence order by id`)).rows;
+let pe = await precios();
+check("precios: la siembra deja exactamente 3 filas reales (3,500 direct, 4,000 direct, 4,500 relayed), aunque se corra 2 veces",
+  JSON.stringify(pe.map((x) => [x.amount, x.state])) === JSON.stringify([[3500, "direct"], [4000, "direct"], [4500, "relayed"]]), pe);
+check("precios: la siembra no trae ninguna fila paid ni referencia de pago", pe.every((x) => x.state !== "paid" && x.payment_reference === null), pe);
+for (const who of ["anon", "A", "K"]) {
+  r = await as(who, `select amount_mxn, state, source from pricing_evidence order by id`);
+  check(`precios: ${who === "anon" ? "anon (sin sesión)" : who === "K" ? "cuenta sin organización" : "cuenta con org"} lee las 3 filas`, r.rows?.length === 3, r);
+}
+// Escritura: ni anon ni ninguna cuenta autenticada (no hay cuenta "fundadora" en la app).
+for (const who of ["anon", "A", "K"]) {
+  for (const [que, sql] of [
+    ["inserta", `insert into pricing_evidence (amount_mxn, state, source) values (9999, 'paid', 'yo') returning id`],
+    ["inserta direct", `insert into pricing_evidence (amount_mxn, state, source) values (100, 'direct', 'yo') returning id`],
+    ["mejora un estado (update relayed → paid)", `update pricing_evidence set state = 'paid', payment_reference = 'FALSO-1' returning id`],
+    ["edita un monto", `update pricing_evidence set amount_mxn = 1 returning id`],
+    ["borra", `delete from pricing_evidence returning id`],
+    ["vacía la tabla", `truncate pricing_evidence`],
+  ]) {
+    r = await as(who, sql);
+    check(`precios: ATAQUE ${who} ${que} → rechazado`, negado(r), r);
+  }
+}
+// Append-only también para el SQL Editor / service role.
+r = await intentaSuper(`update pricing_evidence set state = 'paid', payment_reference = 'TRF-1' where state = 'relayed'`);
+check("precios: ni el superusuario mejora un estado en silencio (append-only)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`update pricing_evidence set amount_mxn = 4200 where amount_mxn = 4000`);
+check("precios: ni el superusuario edita un monto (append-only)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`delete from pricing_evidence`);
+check("precios: ni el superusuario borra (append-only)", /append-only/.test(r.error ?? ""), r);
+r = await intentaSuper(`truncate pricing_evidence`);
+check("precios: ni el superusuario vacía la tabla (append-only)", /append-only/.test(r.error ?? ""), r);
+pe = await precios();
+check("precios: tras los ataques siguen las 3 filas, intactas", pe.length === 3 && pe[2].state === "relayed" && pe[1].amount === 4000, pe);
+// Restricciones: la base no acepta un "paid" sin prueba ni basura.
+for (const [nombre, sql, regla] of [
+  ["paid sin referencia de pago", `insert into pricing_evidence (amount_mxn, state, source) values (4500, 'paid', 'Usuario #3')`, /pricing_evidence_payment_check/],
+  ["paid con referencia en blanco", `insert into pricing_evidence (amount_mxn, state, source, payment_reference) values (4500, 'paid', 'Usuario #3', '   ')`, /pricing_evidence_payment_check/],
+  ["direct con referencia de pago", `insert into pricing_evidence (amount_mxn, state, source, payment_reference) values (4500, 'direct', 'Usuario #3', 'TRF-1')`, /pricing_evidence_payment_check/],
+  ["estado fuera de direct/relayed/paid", `insert into pricing_evidence (amount_mxn, state, source) values (4500, 'validated', 'Usuario #3')`, /pricing_evidence_state_check/],
+  ["monto 0", `insert into pricing_evidence (amount_mxn, state, source) values (0, 'direct', 'Usuario #3')`, /pricing_evidence_amount_check/],
+  ["monto negativo", `insert into pricing_evidence (amount_mxn, state, source) values (-10, 'direct', 'Usuario #3')`, /pricing_evidence_amount_check/],
+  ["fuente vacía", `insert into pricing_evidence (amount_mxn, state, source) values (100, 'direct', '')`, /pricing_evidence_source_check/],
+  ["fuente solo puntuación", `insert into pricing_evidence (amount_mxn, state, source) values (100, 'direct', '...')`, /pricing_evidence_source_check/],
+  ["sin fuente", `insert into pricing_evidence (amount_mxn, state) values (100, 'direct')`, /null value in column "source"/],
+]) {
+  r = await intentaSuper(sql);
+  check(`precios: ${nombre} → rechazado por la base`, regla.test(r.error ?? ""), r);
+}
+// La única forma de llegar a "paid": una fila nueva con prueba del pago,
+// desde el SQL Editor. La fila relayed original sigue ahí, sin cambios.
+r = await intentaSuper(`insert into pricing_evidence (amount_mxn, state, source, payment_reference) values (4500, 'paid', 'Prueba PGlite', 'TRF-PRUEBA-1')`);
+check("precios: paid con referencia de pago, como fila nueva desde el SQL Editor → aceptado", !r.error, r);
+pe = await precios();
+check("precios: la fila nueva paid no cambió la relayed (4 filas, la 3a sigue relayed)", pe.length === 4 && pe[2].state === "relayed" && pe[3].state === "paid", pe);
+r = await ejecutablesPorAnon();
+check("tras pricing_evidence, anon sigue sin EXECUTE en ninguna función", r.length === 0, r);
+r = (await db.query(`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`)).rows;
+check("tras pricing_evidence, RLS sigue encendido en todas las tablas", r.length === 0, r);
+
 // ---------- Rutas por HTTP (opcional) ----------
 const BASE = process.env.BASE_URL?.replace(/\/$/, "");
 if (BASE) {

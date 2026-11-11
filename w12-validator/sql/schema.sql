@@ -923,3 +923,71 @@ $$;
 
 revoke all on function public.registrar_evento(text, uuid, integer) from public, anon;
 grant execute on function public.registrar_evento(text, uuid, integer) to authenticated;
+
+-- ============================================================
+-- Semana 14, Feature 1: evidencia de precio (pricing_evidence).
+-- Cada señal de precio es una fila con su estado: direct (lo dijo la
+-- persona usuaria), relayed (lo reportó la persona usuaria de parte de
+-- quien decide) o paid (hubo un pago real). Son datos del venture, no de
+-- un cliente: org_id es nullable y null = Validator.
+-- Lectura pública (las páginas /pricing y /about no piden sesión).
+-- Escritura: solo quien funda, desde el SQL Editor (service role). Ni anon
+-- ni ninguna cuenta autenticada inserta.
+-- Append-only, también para el SQL Editor: una corrección es una fila
+-- nueva, nunca una edición (mismo patrón que eventos).
+-- Cláusula de sombra: el estado de una señal no se mejora en silencio. Una
+-- fila "paid" exige una referencia de pago real, y solo "paid" la lleva.
+-- Los datos reales se siembran aparte: sql/seed-pricing-evidence.sql.
+-- ============================================================
+
+create table if not exists public.pricing_evidence (
+  id bigint generated always as identity primary key,
+  org_id uuid references public.organizations (id),
+  amount_mxn numeric(12, 2) not null constraint pricing_evidence_amount_check check (amount_mxn > 0),
+  state text not null constraint pricing_evidence_state_check check (state in ('direct', 'relayed', 'paid')),
+  -- Quién lo dijo y cuándo, p. ej. "Usuario #3, sesión de la semana 13".
+  source text not null constraint pricing_evidence_source_check check (
+    char_length(source) <= 300 and regexp_replace(source, '[^[:alnum:]]', '', 'g') <> ''
+  ),
+  note text constraint pricing_evidence_note_check check (note is null or char_length(note) <= 1000),
+  -- La prueba del pago (folio de la transferencia, id del cobro). Sin ella
+  -- no hay "paid"; con ella no hay otro estado.
+  payment_reference text constraint pricing_evidence_payment_check check (
+    (state = 'paid') = (payment_reference is not null and regexp_replace(payment_reference, '[^[:alnum:]]', '', 'g') <> '')
+  ),
+  created_at timestamptz not null default now()
+);
+
+alter table public.pricing_evidence enable row level security;
+
+drop policy if exists "public read pricing_evidence" on public.pricing_evidence;
+create policy "public read pricing_evidence"
+  on public.pricing_evidence for select
+  to anon, authenticated
+  using (true);
+
+revoke all on public.pricing_evidence from anon, authenticated;
+grant select on public.pricing_evidence to anon, authenticated;
+
+create or replace function public.pricing_evidence_inmutable()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'pricing_evidence es append-only: una corrección es una fila nueva, nunca una edición.'
+    using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.pricing_evidence_inmutable() from public, anon, authenticated;
+
+drop trigger if exists pricing_evidence_sin_update_delete on public.pricing_evidence;
+create trigger pricing_evidence_sin_update_delete
+  before update or delete on public.pricing_evidence
+  for each row execute function public.pricing_evidence_inmutable();
+
+drop trigger if exists pricing_evidence_sin_truncate on public.pricing_evidence;
+create trigger pricing_evidence_sin_truncate
+  before truncate on public.pricing_evidence
+  for each statement execute function public.pricing_evidence_inmutable();
