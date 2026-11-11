@@ -1559,3 +1559,93 @@ layout raíz, también en /login y /onboarding):
     producción con su sesión.
   - El encabezado a 375 px no se midió esta vez (sin navegador). Con
     sesión es la fila más larga (4 enlaces); se acomoda con `flex-wrap`.
+
+### 2026-11-11 — Encabezado compartido en producción (cf4eca6)
+
+- Vercel publicó unos 50 s después del push: /pricing ya traía el
+  encabezado compartido.
+- `npm run verificar:deploy -- https://www.packvalidator.online`: 35 OK,
+  0 FALLA. Incluye la navegación compartida en /, /pricing, /about,
+  /simulador y /login, y que sin sesión no aparezca «Mi evidencia».
+- **Revisión de Gonzalo con su sesión real en producción** (confirmada por
+  él, 2026-11-11), los 4 puntos:
+  1. **/validador:** el panel se ve correcto, con el encabezado compartido.
+  2. **Navegación desde el panel:** Precios, El caso 10:1 y Simulador
+     mantienen la sesión en las 3 páginas.
+  3. **Logo:** «Validator» regresa al panel.
+  4. **Móvil:** con sesión, la fila de navegación pasa a dos líneas sin
+     scroll horizontal.
+- Con esto el encabezado compartido queda verificado con y sin sesión.
+
+## 2026-11-11 — Persona test (Layer 1), semana 14
+
+Lo corrió Gonzalo aparte, como pide el prompt. Hallazgos tal como los
+reportó; Claude no agregó ni cambió ninguno. Con esto queda resuelto el
+pendiente «Persona test (Layer 1)» del resumen de la Feature 5.
+
+**Personas:** Gonzalo (founder, Concept G) y Renata (sintética, cosmetics,
+mid-size).
+
+**Pantallas recorridas:** /pricing (3 niveles), el detalle de Pro, /about
+(memo 10:1), /simulador (supuestos + proyección).
+
+**Hallazgos sin fricción:**
+
+- Los 3 niveles y sus chips de evidencia (no probado / evidencia directa +
+  referida / hipótesis) se entienden de inmediato, sin necesidad de clic.
+- El detalle de Pro (las 3 cifras con su estado y fuente, más «Pagos
+  reales: 0. Ninguna de estas cifras es una venta.») se lee como honesto,
+  no como venta.
+- Las 4 tarjetas de /about (incluida la de $0 pagado) son claras.
+- La nota «estimación todavía no está publicada» es honesta sobre el costo
+  que falta.
+- En /simulador, las cajas de borde punteado «SUPUESTO: EDITABLE, NO
+  MEDIDO» se distinguen bien de las cifras reales de borde sólido en
+  /about.
+- La proyección muestra correctamente un cliente fraccionario (0.5) sin
+  redondear ni esconderlo.
+
+**Confusión encontrada, por severidad:**
+
+- **ALTA — /pricing, precio fundador de Pro.** «Precio fundador:
+  $3,500/mes × 12 meses» no tiene fecha límite ni condición de quién
+  califica como «primer cliente» visible en ningún lado. Cita sintética
+  de Renata: «¿Este precio es para cualquiera que se registre hoy, o solo
+  para los primeros clientes? ¿Puedo esperar un mes y seguir teniéndolo?»
+- **BAJA — /about, regla del 20%.** Se presenta la regla sin ninguna
+  estimación para comprobarla, aunque la página ya explica por qué (sin
+  estimación publicada). Confusión menor, ya parcialmente resuelta por el
+  propio texto.
+- **BAJA — /simulador, estilo supuesto vs. evidencia.** Sin queja, se
+  distingue bien para ambas personas.
+
+**Peor confusión y su origen:**
+
+- **Cómo se diseñó.** El precio fundador se diseñó explícitamente, hace
+  dos semanas, en la pelea de Brain Bending con el modelo, como «descuento
+  visible y con fecha límite». La idea era doble: que el precio de lista
+  nunca quedara anclado al número de una sola persona, y que el descuento
+  mismo no se volviera, en silencio, el precio permanente.
+- **Qué se construyó.** Tiene la parte visible pero no la fecha límite:
+  nada en /pricing dice cuándo termina el precio fundador ni cuántos
+  clientes todavía pueden tomarlo.
+- **Cómo se lee.** Para una visitante nueva como Renata, esto se lee menos
+  como un descuento de fundador y más como «el precio real probablemente
+  es $3,500, y el $4,500 es un número que nadie paga en realidad». Es
+  justo lo contrario de la disciplina que el diseño buscaba imponer.
+
+**No se corrigió esta semana.** Queda marcado para la siguiente iteración,
+con la misma disciplina de recorte de alcance de semanas anteriores.
+
+**Qué confirma esto sobre la cláusula de sombra** (el pago compra acceso,
+nunca una mejor etiqueta):
+
+- **Confirma:** los tres estados de evidencia nunca se mezclan en
+  pantalla. /pricing, el detalle de Pro y /about mantienen $3,500 /
+  $4,000 / $4,500 separados, con fuente y estado, y la línea de $0 pagado
+  se muestra con la misma claridad que las demás.
+- **No confirma:** que un descuento sin alcance no pueda volverse, por
+  simple omisión, el precio de facto. Un descuento sin fecha límite es una
+  versión suave del mismo problema que la cláusula de sombra busca
+  prevenir. No es evidencia que se infla sola: es un precio que infla en
+  silencio su propia permanencia.
