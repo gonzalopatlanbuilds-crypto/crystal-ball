@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Aviso from "@/components/Aviso";
@@ -78,6 +79,11 @@ export default async function Home({ searchParams }: PageProps<"/">) {
           Las plataformas enterprise de este tipo cobran por cotización, fuera
           del alcance de un productor pequeño. Validator es para productores
           como Concept G.
+        </p>
+        <p className="mt-2 text-sm">
+          <Link href="/pricing" className="font-semibold text-[#0b5e52] underline">Ver precios y su evidencia</Link>
+          {" · "}
+          <Link href="/about" className="font-semibold text-[#0b5e52] underline">El caso 10:1</Link>
         </p>
 
         <h2 className="mt-8 text-lg font-bold text-zinc-900">Lo que Validator NUNCA hace</h2>

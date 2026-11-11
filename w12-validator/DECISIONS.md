@@ -1374,3 +1374,82 @@ servidor y se borraron del navegador los escenarios de prueba.
 - **No re-verificado en el navegador:** el componente llama directo a
   `textoPagados`, que ya está probada. Se verifica en producción después
   del deploy 2.
+
+## 2026-11-11 — Feature 5: polish y docs (commit 6, deploy 2)
+
+**Aceptación móvil (375 px) de /pricing y /about**, más /simulador: medida
+el 2026-11-11 en la prueba del simulador (`next start` local, Chrome, sin
+sesión, contra la base real).
+
+- **Método:**
+  - La ventana de Chrome está maximizada y no se dejó redimensionar
+    (`innerWidth` seguía en 1910 px).
+  - Cada página se cargó en un iframe del mismo origen, de 375 px y de
+    320 px de ancho.
+  - Dentro de cada iframe se comparó `scrollWidth` contra `innerWidth` y
+    se buscó cualquier elemento con `getBoundingClientRect().right` mayor
+    que el ancho.
+- **Resultados:**
+
+  | Página | 375 px | 320 px | Elementos fuera |
+  |---|---|---|---|
+  | /pricing | sin scroll horizontal (scrollWidth 360) | sin scroll (305) | 0 |
+  | /about | sin scroll horizontal (360) | sin scroll (305) | 0 |
+  | /simulador | sin scroll horizontal (360) | sin scroll (305) | 0 |
+
+  (360 y 305 = el ancho menos la barra de scroll vertical del iframe.)
+- **Chips legibles:** todos a 14 px y en una sola línea.
+  - /pricing: «Segmento no probado» 175 px, «Evidencia directa + referida»
+    208 px, «Hipótesis, sin evidencia» 185 px.
+  - /about: «Directa» 73 px, «Referida» 82 px, «Pagada» 76 px.
+- **Revisión a ojo:** captura del iframe de 375 px en /simulador. Las 3
+  columnas de precio y mezcla (nombre, $ precio, % mezcla) caben sin
+  encimarse.
+- **Limitación:** es el mismo ancho de pantalla, pero no es un teléfono
+  real (no es emulación táctil ni la barra de un navegador móvil). No se
+  probó en un teléfono físico.
+
+**Polish (commit 6):**
+
+- La home (`/`) enlaza a «Ver precios y su evidencia» (/pricing) y a «El
+  caso 10:1» (/about), en «Quién paga por esto». Antes las páginas nuevas
+  no se podían alcanzar desde la home. `verificar:deploy` tiene un check
+  nuevo para estos enlaces (26 + 4 de /simulador = 30 en total).
+- README: rutas públicas, sección «Precios (semana 14)», siembra en
+  «Correr local» y lo que cubre test:logica.
+
+**Resumen de la semana 14:**
+
+- **Evidencia real sembrada** (`sql/seed-pricing-evidence.sql`, ids 1–3
+  en producción, verificados con la llave pública):
+
+  | id | Monto | Estado | Fuente |
+  |---|---|---|---|
+  | 1 | MXN 3,500/mes | direct | Usuario #3, Week 13 user session (primera conversación de pricing). Sin ancla. |
+  | 2 | MXN 4,000/mes | direct | Usuario #3, Week 13 user session (misma conversación, segunda respuesta). Su techo declarado. |
+  | 3 | MXN 4,500/mes | relayed | Usuario #3, Week 14 follow-up session, de parte de quien decide en su empresa. |
+
+  - Ningún pago: 0 filas paid.
+  - `created_at` = fecha de registro (2026-11-11), no la de la
+    conversación. Solo se conoce la semana del curso.
+- **Prueba mecánica:** ver «Prueba mecánica de la semana 14 y bug
+  corregido».
+  - Bugs reales encontrados en la semana:
+    1. La siembra insertaba en otro orden (test:schema, antes de tocar
+       Supabase).
+    2. /pricing y /about habrían redirigido a /login (se vio en el código
+       del proxy, antes de probar).
+    3. «1 clientes» / «1 referidos» (navegador real, commit 5).
+- **Persona test (Layer 1): PENDIENTE.** El prompt dice que se corre
+  aparte: Gonzalo/Concept G y Renata/sintética recorren /pricing y /about
+  desde capturas. No lo corrió Claude, y no se anota ningún hallazgo
+  inventado. Cuando Gonzalo lo corra, sus hallazgos van en una entrada
+  nueva.
+- **Al commit 6:**
+  - `rm -rf .next && npm run build` limpio.
+  - test:schema 263 pass, sin BASE_URL.
+  - test:logica 283 pass.
+  - lint y tsc limpios.
+- **Deploy 2 (push de 4 + 5 + 6):** pendiente de verificar con
+  `verificar:deploy` y BASE_URL. Además, revisar en producción el texto
+  «1 cliente que paga al mes» (20 leads).

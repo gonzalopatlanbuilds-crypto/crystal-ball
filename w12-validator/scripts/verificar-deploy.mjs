@@ -25,6 +25,7 @@ const htmlHome = await home.text();
 check("/ (home pública) responde 200 sin sesión", home.status === 200, `(${home.status})`);
 check("/ muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(texto(htmlHome)));
 check("/ no filtra llaves secretas", !FUGA.test(htmlHome));
+check("/ enlaza a /pricing y /about (semana 14)", /href="\/pricing"/.test(htmlHome) && /href="\/about"/.test(htmlHome));
 
 const login = await pedir("/login");
 const htmlLogin = await login.text();
