@@ -12,7 +12,7 @@ import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import { eventoDeCarga } from "../lib/eventos.ts";
 import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, tonoEstado, type FilaPrecio } from "../lib/precios.ts";
-import { aTexto, borrarEscenario, calcular, CLAVE_ESCENARIOS, ESCENARIOS_MAX, ETIQUETA_ANUAL, guardarEscenario, leerCampos, leerEscenarios, MENSAJE_SIN_ALMACEN, recordarUltimo, SUPUESTOS_EJEMPLO, supuestosValidos, ultimoEscenario, type CamposTexto, type Supuestos } from "../lib/simulador.ts";
+import { aTexto, borrarEscenario, calcular, CLAVE_ESCENARIOS, conteo, textoPagados, ESCENARIOS_MAX, ETIQUETA_ANUAL, guardarEscenario, leerCampos, leerEscenarios, MENSAJE_SIN_ALMACEN, recordarUltimo, SUPUESTOS_EJEMPLO, supuestosValidos, ultimoEscenario, type CamposTexto, type Supuestos } from "../lib/simulador.ts";
 import { ahorroMensual, costoTiempoMes, cumpleRegla20, ESTIMACION_FUNDADOR, HOY as HOY_MEMO, precioMaximo, razonValorPrecio, REGLA_20, TOPE_PRECIO_SOBRE_AHORRO, validarEstimacion } from "../lib/memo.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
@@ -594,6 +594,21 @@ check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, 
   l = leerEscenarios(dañado);
   check("sim: se muestran solo los escenarios válidos y se avisa cuántos se descartaron", l.escenarios.length === 1 && l.escenarios[0].id === "ok" && /4 escenario/.test(l.error ?? ""), l);
   check("sim: supuestos con leads como texto → inválidos", supuestosValidos({ ...base, leadsMes: "20" }) === null && supuestosValidos(null) === null);
+}
+
+// ---------- Semana 14: bug de la prueba mecánica (plural) ----------
+// En el navegador (next start, 2026-11-11) el embudo decía «1 clientes que
+// pagan al mes»; con 10 leads × 10% también diría «1 referidos».
+{
+  check("plural: 1 → «1 cliente que paga al mes» (antes «1 clientes que pagan»)", textoPagados(1) === "1 cliente que paga al mes", textoPagados(1));
+  check("plural: 0.5 → «0.5 clientes que pagan al mes»", textoPagados(0.5) === "0.5 clientes que pagan al mes", textoPagados(0.5));
+  check("plural: 0 y 2 → plural", textoPagados(0) === "0 clientes que pagan al mes" && textoPagados(2) === "2 clientes que pagan al mes");
+  check("plural: 1.5 → plural (solo el 1 exacto va en singular)", textoPagados(1.5) === "1.5 clientes que pagan al mes");
+  check("plural: 1 referido / 5 referidos / 1 lead / 20 leads", conteo(1, "referido", "referidos") === "1 referido" && conteo(5, "referido", "referidos") === "5 referidos" && conteo(1, "lead", "leads") === "1 lead" && conteo(20, "lead", "leads") === "20 leads");
+  check("plural: miles con coma (1,000 leads)", conteo(1000, "lead", "leads") === "1,000 leads", conteo(1000, "lead", "leads"));
+  // El caso exacto del navegador: 20 leads × 50% × 10% = 1 cliente.
+  const r = calcular({ ...SUPUESTOS_EJEMPLO, leadsMes: 20 });
+  check("plural: el caso del navegador (20 × 50% × 10%) ahora dice «1 cliente que paga al mes»", textoPagados(r.pagadosMes) === "1 cliente que paga al mes");
 }
 
 console.log(`\n${ok} pass, ${fail} fail`);

@@ -74,6 +74,19 @@ export function calcular(s: Supuestos): Resultado {
   };
 }
 
+// "1 cliente" / "0.5 clientes" / "2 clientes". Bug de la prueba mecánica
+// (2026-11-11): la pantalla decía «1 clientes que pagan al mes» y
+// «1 referidos». En español solo el 1 exacto va en singular.
+const FORMATO_CONTEO = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 });
+
+export function conteo(n: number, singular: string, plural: string): string {
+  return `${FORMATO_CONTEO.format(n)} ${n === 1 ? singular : plural}`;
+}
+
+export function textoPagados(n: number): string {
+  return `${conteo(n, "cliente", "clientes")} ${n === 1 ? "que paga" : "que pagan"} al mes`;
+}
+
 // ---------- Validación ----------
 
 // Lo que llega del formulario: texto tal cual lo escribió la persona.

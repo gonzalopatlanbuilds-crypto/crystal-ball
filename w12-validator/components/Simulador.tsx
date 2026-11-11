@@ -6,6 +6,7 @@ import {
   aTexto,
   borrarEscenario,
   calcular,
+  conteo,
   ETIQUETA_ANUAL,
   guardarEscenario,
   leerCampos,
@@ -15,6 +16,7 @@ import {
   NOMBRE_NIVEL_SIM,
   recordarUltimo,
   SUPUESTOS_EJEMPLO,
+  textoPagados,
   ultimoEscenario,
   type Almacen,
   type CamposTexto,
@@ -154,8 +156,9 @@ export default function Simulador() {
       {resultado ? (
         <div className="mt-3 rounded-xl border border-zinc-300 px-5 py-4">
           <p className="text-sm text-zinc-600">
-            {campos.leadsMes} leads × {campos.convDirectoReferidoPct}% → {formatoClientes.format(resultado.referidosMes)} referidos ×{" "}
-            {campos.convReferidoPagadoPct}% → <strong>{formatoClientes.format(resultado.pagadosMes)} clientes que pagan al mes</strong>
+            {conteo(Number(campos.leadsMes.replace(/,/g, "")), "lead", "leads")} × {campos.convDirectoReferidoPct}% →{" "}
+            {conteo(resultado.referidosMes, "referido", "referidos")} × {campos.convReferidoPagadoPct}% →{" "}
+            <strong>{textoPagados(resultado.pagadosMes)}</strong>
           </p>
           <ul className="mt-2 text-sm text-zinc-700">
             {NIVELES_SIM.filter((n) => resultado.porNivel[n].clientes > 0).map((n) => (

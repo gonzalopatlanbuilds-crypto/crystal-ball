@@ -1327,3 +1327,50 @@ servidor y se borraron del navegador los escenarios de prueba.
 - **Bug encontrado:** el embudo dice «1 clientes que pagan al mes». El
   plural no cambia con 1. Pendiente de decidir si va en el commit 5
   (fix de la prueba mecánica).
+
+## 2026-11-11 — Prueba mecánica de la semana 14 y bug corregido (commit 5)
+
+**Plan de pruebas del PACKET §10:**
+
+1. **«Agregar una cifra nueva (direct/relayed/paid) y confirmar que
+   aparece en el nivel correcto, sin pasar a paid sin una transacción
+   real»: NO se hizo en producción** (decisión de Gonzalo, 2026-11-11).
+   - Razón: `pricing_evidence` es append-only, también para el SQL
+     Editor. Una fila de prueba no se podría borrar nunca y contaminaría
+     para siempre la evidencia real de precio que muestran /pricing y
+     /about. Eso viola la cláusula de sombra: una cifra que no es
+     evidencia real quedaría presentada como si lo fuera.
+   - La cobertura queda en `test:schema` (PGlite):
+     - una fila paid nueva con referencia de pago entra como fila nueva y
+       la relayed original no cambia;
+     - paid sin referencia, o direct con referencia, se rechazan;
+     - nadie, ni el superusuario, puede mejorar un estado con update.
+   - Y en `test:logica`:
+     - con una fila paid el chip de Pro dice «Evidencia directa + referida
+       + pagada»;
+     - sin ella, «pagada» no aparece;
+     - un estado inventado no cuenta;
+     - los pagos reales se cuentan solo con filas paid.
+2. **Simulador con supuestos, comparado contra la aritmética a mano:**
+   hecho en el navegador real (entrada «Prueba en navegador real del
+   simulador», arriba). Todo coincide.
+3. **Guardar un escenario y recargar:** hecho en el navegador real. Pasa.
+4. **/pricing y /about sin sesión:** `verificar:deploy` 25/25 y
+   `test:schema` con BASE_URL 269/269 contra producción (deploy 1).
+
+**Bug encontrado en el paso 2 (navegador real, `next start`):**
+
+- El embudo decía «20 leads × 50% → 10 referidos × 10% → **1 clientes que
+  pagan al mes**».
+- Revisando el código salió el mismo error en «referidos»: con 10 leads
+  × 10% diría «1 referidos».
+- Causa: el texto estaba fijo en plural.
+- Arreglo: `conteo(n, singular, plural)` y `textoPagados(n)` en
+  `lib/simulador.ts`. Solo el 1 exacto va en singular («1 cliente que paga
+  al mes», «1 referido», «1 lead»); 0, 0.5, 1.5 y 2 van en plural.
+- `test:logica`: 283 pass. 7 nuevos, incluido el caso exacto del
+  navegador (20 × 50% × 10% = «1 cliente que paga al mes») y miles con
+  coma («1,000 leads»).
+- **No re-verificado en el navegador:** el componente llama directo a
+  `textoPagados`, que ya está probada. Se verifica en producción después
+  del deploy 2.
