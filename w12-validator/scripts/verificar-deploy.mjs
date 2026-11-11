@@ -44,6 +44,18 @@ check("/pricing no dice «pagada» (no hay pagos reales)", !/[Pp]agada/.test(tPr
 check("/pricing muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tPricing));
 check("/pricing no filtra llaves secretas", !FUGA.test(htmlPricing));
 
+const about = await pedir("/about");
+const htmlAbout = await about.text();
+const tAbout = texto(htmlAbout);
+check("/about (pública) responde 200 sin sesión", about.status === 200, `(${about.status})`);
+check("/about muestra las 3 cifras reales: $3,500, $4,000 y $4,500 /mes", /\$3,500\/mes/.test(tAbout) && /\$4,000\/mes/.test(tAbout) && /\$4,500\/mes/.test(tAbout));
+check("/about muestra cada estado (Directa, Referida) y su fuente", /Directa/.test(tAbout) && /Referida/.test(tAbout) && /Fuente: Usuario #3, Week 13 user session/.test(tAbout) && /Fuente: Usuario #3, Week 14 follow-up session/.test(tAbout));
+check("/about muestra la línea $0 pagada (ningún pago real)", /\$0 Pagada Ningún pago real todavía/.test(tAbout));
+check("/about muestra la regla del 20%", /Mi precio no debe pasar del 20% del ahorro estimado/.test(tAbout));
+check("/about no promedia las cifras ($4,000 aparece una sola vez)", (tAbout.match(/\$4,000/g) ?? []).length === 1);
+check("/about muestra la cláusula de sombra", /Validator no certifica cumplimiento ni reciclaje/.test(tAbout));
+check("/about no filtra llaves secretas", !FUGA.test(htmlAbout));
+
 for (const ruta of ["/validador", "/onboarding"]) {
   const res = await pedir(ruta);
   const destino = res.headers.get("location") ?? "";

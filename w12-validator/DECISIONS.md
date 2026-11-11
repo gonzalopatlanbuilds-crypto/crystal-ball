@@ -1108,3 +1108,77 @@ y `order by s.orden`. Ahora la prueba exige el orden 3,500 → 4,000 → 4,500.
   - `test:schema`: 263 pass, sin BASE_URL. La parte HTTP se saltó porque no
     había servidor levantado; corre en el deploy 1.
   - `test:logica`: 225 pass. `lint`: limpio.
+
+## 2026-11-11 — Feature 3: /about (memo 10:1)
+
+**Qué se construyó:**
+
+- `app/about/page.tsx`: página pública, sin sesión. Sigue el mockup
+  `assets/w14-mockup-about.png`.
+  - **Encabezado:** «Una sola empresa de evidencia. Trato esto como
+    hipótesis.», más el aviso de siempre con la cláusula de sombra.
+  - **Estados de la evidencia de precio:**
+    - Una tarjeta por cada fila real de `pricing_evidence`, leída con el
+      mismo `lib/evidencia-precio.ts` que /pricing.
+    - Cada tarjeta lleva monto/mes, chip (Directa/Referida), nota y
+      «Fuente: …».
+    - Si no hay pagos reales, una tarjeta más: «$0 · Pagada · Ningún pago
+      real todavía».
+    - Nada se suma, se promedia ni se elige.
+  - **Hoy: horas a mano + riesgo de multa:**
+    - Lo que hace hoy la persona usuaria: concilia a mano, sin plataforma.
+    - La estimación de costo (tiempo + multa), etiquetada como «estimación
+      propia de quien funda, no una medición».
+  - **El precio:** Pro $4,500 de lista + fundador $3,500 × 12 meses, con
+    enlace a /pricing.
+  - **La regla:** «Mi precio no debe pasar del 20% del ahorro estimado. Si
+    no, tengo un problema de valor.» Con estimación, la página calcula el
+    tope y dice si cada precio (lista y fundador) cumple, con su razón
+    valor:precio.
+- `lib/memo.ts`: lógica pura.
+  - Fórmulas: costo de tiempo = h × $/h; ahorro = tiempo + riesgo
+    prorrateado; tope = 20% del ahorro; razón = ahorro / precio.
+  - `cumpleRegla20` da false si el ahorro es ≤ 0.
+- Chips: directa y referida van en ámbar (tono `senal`: son señales, no
+  ventas). Solo un pago real iría en verde. La línea $0 va en gris.
+- `/about` se agregó a `RUTAS_PUBLICAS` del proxy (el mismo bug que se
+  evitó en /pricing). /pricing enlaza a /about desde el detalle de Pro.
+
+**Pendiente — la estimación de costo.** Ningún documento del venture tiene
+números de horas, costo por hora o multa (se buscó en CHARTER, PERSONAS y
+los 3 PACKET). No se inventaron.
+
+- `ESTIMACION_FUNDADOR` está en `null`. Mientras sea así, la página dice
+  que la estimación todavía no está publicada y no calcula ningún ahorro.
+- Se le pidieron los números a Gonzalo antes del commit 3.
+
+**Pruebas:**
+
+- `test:logica`: 240 pass (15 nuevos). Incluyen la aritmética a mano:
+  - 20 h × $250 = $5,000; + $10,000 de riesgo = $15,000.
+  - Tope $3,000: $3,000 cumple, $3,500 no.
+  - $4,500 cumple con $22,500 y no con $22,499.
+  - Razón 10:1 y 3.3:1; precio 0 → razón 0.
+  - Estimación negativa, NaN o sin base → inválida.
+  - Tonos de los chips.
+- `verificar:deploy`: 8 checks nuevos de /about:
+  - 200 sin sesión;
+  - las 3 cifras;
+  - Directa/Referida con su fuente;
+  - la línea $0;
+  - la regla del 20%;
+  - $4,000 una sola vez (si se promediaran 3,500 y 4,500 saldría
+    justamente 4,000);
+  - la cláusula de sombra;
+  - sin llaves secretas.
+- HTTP de `test:schema` con BASE_URL: /about → 200.
+- `rm -rf .next && npm run build` limpio (/about ƒ). `test:schema` 263
+  pass, sin BASE_URL. `tsc` y `lint`: limpios.
+- **No verificado todavía:** el HTML de /about en vivo. No se levantó
+  ningún servidor, por la indicación de Gonzalo sobre memoria. Se verifica
+  con `verificar:deploy` en el deploy 1.
+- **Decisión de Gonzalo (2026-11-11), opción A:** esta semana /about se
+  publica sin la estimación de costo. `ESTIMACION_FUNDADOR` queda en
+  `null` y la página dice que la estimación todavía no está publicada. No
+  calcula ningún ahorro ni dice si el precio cumple la regla del 20%. La
+  regla sí se muestra, como compromiso.

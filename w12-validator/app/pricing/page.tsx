@@ -140,6 +140,9 @@ function DetalleEvidencia({ detalle, filas, leidas }: { detalle: string; filas: 
         Pagos reales: {pagos}. {pagos === 0 ? "Ninguna de estas cifras es una venta." : ""}
       </p>
       <p className="mt-1">Cada cifra se muestra por separado, con su estado. No se promedian.</p>
+      <p className="mt-2">
+        <Link href="/about" className="font-semibold text-[#0b5e52] underline">Ver el caso 10:1</Link>
+      </p>
     </>
   );
 }

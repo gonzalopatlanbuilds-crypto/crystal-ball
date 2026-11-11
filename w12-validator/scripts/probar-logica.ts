@@ -11,7 +11,8 @@ import { ESCENARIOS } from "./escenarios-lector.ts";
 import { ESCENARIOS_W12 } from "./escenarios-w12.ts";
 import { RESULTADO_COMPARACION } from "../lib/modelo-ia.ts";
 import { eventoDeCarga } from "../lib/eventos.ts";
-import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, type FilaPrecio } from "../lib/precios.ts";
+import { chipDeNivel, ETIQUETA_ESTADO_PRECIO, formatoMxn, NIVELES, normalizarFilas, pagosReales, SEGMENTOS, textoChipEvidencia, tonoEstado, type FilaPrecio } from "../lib/precios.ts";
+import { ahorroMensual, costoTiempoMes, cumpleRegla20, ESTIMACION_FUNDADOR, HOY as HOY_MEMO, precioMaximo, razonValorPrecio, REGLA_20, TOPE_PRECIO_SOBRE_AHORRO, validarEstimacion } from "../lib/memo.ts";
 import type { FilaEvidencia } from "../lib/csv.ts";
 import {
   describirHallazgo,
@@ -478,6 +479,27 @@ check("evento: número inválido (negativo, NaN, decimal) no se registra", [-1, 
   const norm = normalizarFilas(crudas);
   check("normalizar: acepta numeric como texto, descarta estado inventado, monto 0/no numérico y basura", norm.length === 2 && norm[1].amount_mxn === 4000 && norm[1].note === "techo", norm);
   check("normalizar: algo que no es lista → []", normalizarFilas(null).length === 0 && normalizarFilas({}).length === 0);
+}
+
+// ---------- Semana 14: memo 10:1 (/about) ----------
+{
+  check("memo: la regla del 20% dice exactamente «mi precio no debe pasar del 20% del ahorro estimado»", /^Mi precio no debe pasar del 20% del ahorro estimado\./.test(REGLA_20) && TOPE_PRECIO_SOBRE_AHORRO === 0.2);
+  check("memo: «hoy» = conciliación manual, sin plataforma", /a mano/.test(HOY_MEMO) && /No usa ninguna plataforma/.test(HOY_MEMO));
+  check("memo: la estimación de quien funda es null o válida (nunca inventada a medias)", ESTIMACION_FUNDADOR === null || validarEstimacion(ESTIMACION_FUNDADOR) === null, ESTIMACION_FUNDADOR);
+  // Aritmética a mano: 20 h × $250 = $5,000; + $10,000 de riesgo = $15,000.
+  const ej = { horasMes: 20, costoHoraMxn: 250, riesgoMultaMesMxn: 10000, base: "ejemplo de prueba" };
+  check("memo: costo de tiempo 20 h × $250 = $5,000", costoTiempoMes(ej) === 5000);
+  check("memo: ahorro = tiempo + riesgo = $15,000", ahorroMensual(ej) === 15000);
+  check("memo: tope de precio = 20% de $15,000 = $3,000", precioMaximo(15000) === 3000);
+  check("memo: $3,000 cumple el tope de $15,000 (justo en el límite)", cumpleRegla20(3000, 15000));
+  check("memo: $3,500 NO cumple el tope de $15,000", !cumpleRegla20(3500, 15000));
+  check("memo: $4,500 cumple con ahorro $22,500 (20% exacto)", cumpleRegla20(4500, 22500) && !cumpleRegla20(4500, 22499));
+  check("memo: con ahorro 0, ningún precio cumple", !cumpleRegla20(1, 0) && !cumpleRegla20(0, 0));
+  check("memo: razón valor:precio $45,000 / $4,500 = 10:1", razonValorPrecio(45000, 4500) === 10);
+  check("memo: razón con un decimal ($15,000 / $4,500 = 3.3)", razonValorPrecio(15000, 4500) === 3.3);
+  check("memo: razón con precio 0 → 0 (no infinito)", razonValorPrecio(1000, 0) === 0);
+  check("memo: estimación con número negativo o vacía → inválida", validarEstimacion({ ...ej, horasMes: -1 }) !== null && validarEstimacion({ ...ej, costoHoraMxn: NaN }) !== null && validarEstimacion({ ...ej, base: "  " }) !== null);
+  check("chip /about: directa y referida en ámbar (señal), solo un pago en verde", tonoEstado("direct") === "senal" && tonoEstado("relayed") === "senal" && tonoEstado("paid") === "evidencia");
 }
 
 console.log(`\n${ok} pass, ${fail} fail`);

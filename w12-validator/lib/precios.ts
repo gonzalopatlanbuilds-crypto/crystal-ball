@@ -32,9 +32,16 @@ export type FilaPrecio = {
   created_at: string;
 };
 
-// Tono del chip: verde = hay evidencia real; ámbar = segmento no probado;
+// Tono del chip: verde = hay evidencia real (en /about, solo un pago);
+// ámbar = segmento no probado, o una cifra que es señal y no venta;
 // gris = hipótesis sin evidencia.
-export type TonoChip = "evidencia" | "no-probado" | "hipotesis";
+export type TonoChip = "evidencia" | "no-probado" | "senal" | "hipotesis";
+
+// Tono del chip de una fila en /about: directa y referida son señales
+// (ámbar); solo un pago real va en verde.
+export function tonoEstado(estado: EstadoEvidencia): TonoChip {
+  return estado === "paid" ? "evidencia" : "senal";
+}
 
 export type Nivel = {
   id: "starter" | "pro" | "enterprise";

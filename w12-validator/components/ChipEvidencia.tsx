@@ -3,6 +3,7 @@ import type { TonoChip } from "@/lib/precios";
 const ESTILO: Record<TonoChip, string> = {
   evidencia: "border-[#0b5e52] bg-teal-50 text-[#0b5e52]",
   "no-probado": "border-amber-700 bg-amber-50 text-amber-800",
+  senal: "border-amber-700 bg-amber-50 text-amber-800",
   hipotesis: "border-zinc-500 bg-zinc-100 text-zinc-700",
 };
 
